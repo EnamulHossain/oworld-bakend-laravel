@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>oWorld Admin</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.6.0/css/all.min.css">
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.6.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/overlayscrollbars/css/OverlayScrollbars.min.css">
     <style>
@@ -65,24 +67,6 @@
                             <p>Offers</p>
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a href="{{ route('admin.users') }}" class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}">
-                            <i class="nav-icon fas fa-users"></i>
-                            <p>Users</p>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ route('admin.settings') }}" class="nav-link {{ request()->routeIs('admin.settings') ? 'active' : '' }}">
-                            <i class="nav-icon fas fa-sliders-h"></i>
-                            <p>Settings</p>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ route('admin.settings.website') }}" class="nav-link {{ request()->routeIs('admin.settings.website') ? 'active' : '' }}">
-                            <i class="nav-icon fas fa-globe"></i>
-                            <p>Website Setup</p>
-                        </a>
-                    </li>
                     <li class="nav-item has-treeview {{ request()->is('admin/settings/content*') ? 'menu-open' : '' }}">
                         <a href="#" class="nav-link {{ request()->is('admin/settings/content*') ? 'active' : '' }}">
                             <i class="nav-icon fas fa-images"></i>
@@ -109,6 +93,25 @@
                             </li>
                         </ul>
                     </li>
+                    <li class="nav-item">
+                        <a href="{{ route('admin.users') }}" class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}">
+                            <i class="nav-icon fas fa-users"></i>
+                            <p>Users</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="{{ route('admin.settings') }}" class="nav-link {{ request()->routeIs('admin.settings') ? 'active' : '' }}">
+                            <i class="nav-icon fas fa-sliders-h"></i>
+                            <p>Settings</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="{{ route('admin.settings.website') }}" class="nav-link {{ request()->routeIs('admin.settings.website') ? 'active' : '' }}">
+                            <i class="nav-icon fas fa-globe"></i>
+                            <p>Website Setup</p>
+                        </a>
+                    </li>
+
                 </ul>
             </nav>
         </div>
@@ -117,27 +120,27 @@
     <div class="content-wrapper">
         <div class="content-header">
             <div class="container-fluid">
-                @if(session('status'))
+                @if (session('status'))
                     <div class="alert alert-success alert-status">{{ session('status') }}</div>
                 @endif
                 @if ($errors->any())
-                    <div class="alert alert-danger alert-status">{{ $errors->first() }}</div>
-                @endif
+                    <div class="alert alert-danger alert-status">{{ $errors->first() }}</div> @endif
                 @yield('content')
             </div>
         </div>
     </div>
 
     <footer class="main-footer">
-        <strong>oWorld Admin</strong>
-        <div class="float-right d-none d-sm-inline-block">
-            <b>{{ now()->year }}</b>
-        </div>
+    <strong>oWorld Admin</strong>
+    <div class="float-right d-none d-sm-inline-block">
+        <b>{{ now()->year }}</b>
+    </div>
     </footer>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
-@stack('scripts')
-</body>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+    @stack('scripts')
+    </body>
+
 </html>

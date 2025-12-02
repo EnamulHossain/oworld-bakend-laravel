@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
 use App\Models\SystemSetting;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
@@ -49,8 +50,44 @@ class FrontendController extends Controller
         $homeSlider = $this->hydrateMediaArray($this->contentSetting('content_home_slider', []));
         $blockOne = $this->hydrateMediaArray($this->contentSetting('content_block_one', []));
         $blockTwo = $this->hydrateMediaArray($this->contentSetting('content_block_two', []));
+        $blockTwoSliders = collect($blockTwo)
+            ->take(6)
+            ->map(function ($item) {
+                $type = $item['type'] ?? 'category';
+                $ref = $item['category'] ?? null;
 
-        return view('home', compact('settings', 'categories', 'events', 'offers', 'homeSlider', 'blockOne', 'blockTwo'));
+                $query = Offer::query()
+                    ->with('organization:id,organization_name')
+                    ->where('status', 'active');
+
+                if ($type === 'category' && $ref) {
+                    $query->where('category_id', $ref);
+                } elseif ($type === 'event' && $ref) {
+                    $query->where('event_id', $ref);
+                } elseif ($type === 'offer' && $ref) {
+                    $query->where('id', $ref);
+                }
+
+                $offers = $this->formatOffers(
+                    $query->orderBy('start_date')
+                        ->orderByDesc('created_at')
+                        ->limit(12)
+                        ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id', 'category_id', 'event_id'])
+                );
+
+                return [
+                    'meta' => $item,
+                    'offers' => $offers,
+                ];
+            })
+            ->filter(function ($slider) {
+                // Keep sliders even if they have no offers so the anchor still works, but require meta.
+                return is_array($slider['meta'] ?? null);
+            })
+            ->values()
+            ->all();
+
+        return view('home', compact('settings', 'categories', 'events', 'offers', 'homeSlider', 'blockOne', 'blockTwo', 'blockTwoSliders'));
     }
 
     public function categories()
@@ -117,9 +154,45 @@ class FrontendController extends Controller
         return view('events.index', compact('settings', 'events'));
     }
 
+    public function event(Event $event)
+    {
+        abort_unless($event->status === 'published', 404);
+
+        $settings = $this->siteSettings();
+        $event->load('organization:id,organization_name');
+        $event = $this->formatEvents(collect([$event]))->first();
+        $offers = $this->formatOffers(
+            Offer::query()
+                ->with('organization:id,organization_name')
+                ->where('status', 'active')
+                ->where('event_id', $event->id)
+                ->orderBy('start_date')
+                ->orderByDesc('created_at')
+                ->limit(12)
+                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+        );
+
+        return view('events.show', [
+            'settings' => $settings,
+            'event' => $event,
+            'organization' => $event->organization,
+            'offers' => $offers,
+        ]);
+    }
+
     public function offers()
     {
         $settings = $this->siteSettings();
+        $specialOffers = $this->formatOffers(
+            Offer::query()
+                ->with('organization:id,organization_name')
+                ->where('status', 'active')
+                ->where('offer_type', 'special')
+                ->orderByDesc('start_date')
+                ->orderByDesc('created_at')
+                ->limit(6)
+                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+        );
         $offers = $this->formatOffers(
             Offer::query()
                 ->with('organization:id,organization_name')
@@ -129,7 +202,22 @@ class FrontendController extends Controller
                 ->paginate(12, ['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
         );
 
-        return view('offers.index', compact('settings', 'offers'));
+        return view('offers.index', compact('settings', 'offers', 'specialOffers'));
+    }
+
+    public function offer(Offer $offer)
+    {
+        abort_unless($offer->status === 'active', 404);
+
+        $settings = $this->siteSettings();
+        $offer = $this->formatOffers(collect([$offer]))->first();
+        $organization = $offer->organization;
+
+        return view('offers.show', [
+            'settings' => $settings,
+            'offer' => $offer,
+            'organization' => $organization,
+        ]);
     }
 
     public function loginForm()
@@ -137,6 +225,75 @@ class FrontendController extends Controller
         $settings = $this->siteSettings();
 
         return view('auth.login', compact('settings'));
+    }
+
+    public function search(Request $request)
+    {
+        $term = trim($request->get('q', ''));
+        if ($term === '') {
+            return response()->json(['categories' => [], 'events' => [], 'offers' => []]);
+        }
+
+        $like = '%' . $term . '%';
+
+        $categories = Category::query()
+            ->where('status', 'active')
+            ->where('name', 'like', $like)
+            ->orderBy('name')
+            ->limit(5)
+            ->get(['id', 'name', 'image'])
+            ->map(function ($category) {
+                return [
+                    'id' => $category->id,
+                    'label' => $category->name,
+                    'url' => route('categories.show', $category),
+                    'image' => $this->resolveMedia($category->image),
+                ];
+            });
+
+        $events = Event::query()
+            ->where('status', 'published')
+            ->where('name', 'like', $like)
+            ->orderBy('starting_date')
+            ->orderByDesc('created_at')
+            ->limit(5)
+            ->get(['id', 'name', 'banner', 'starting_date'])
+            ->map(function ($event) {
+                return [
+                    'id' => $event->id,
+                    'label' => $event->name,
+                    'meta' => optional($event->starting_date)->format('M d, Y'),
+                    'url' => route('events.show', $event),
+                    'image' => $this->resolveMedia($event->banner),
+                ];
+            });
+
+        $offers = Offer::query()
+            ->where('status', 'active')
+            ->where('name', 'like', $like)
+            ->orderBy('start_date')
+            ->orderByDesc('created_at')
+            ->limit(5)
+            ->get(['id', 'name', 'cover', 'images', 'offer_type'])
+            ->map(function ($offer) {
+                $image = $offer->cover;
+                if (!$image && is_array($offer->images)) {
+                    $image = $offer->images[0] ?? null;
+                }
+                return [
+                    'id' => $offer->id,
+                    'label' => $offer->name,
+                    'meta' => $offer->offer_type,
+                    'url' => route('offers.show', $offer),
+                    'image' => $this->resolveMedia($image),
+                ];
+            });
+
+        return response()->json([
+            'categories' => $categories,
+            'events' => $events,
+            'offers' => $offers,
+        ]);
     }
 
     public function registerForm()
@@ -211,9 +368,13 @@ class FrontendController extends Controller
         });
     }
 
-    private function resolveMedia(?string $path): ?string
+    private function resolveMedia($path): ?string
     {
         if (!$path) {
+            return null;
+        }
+
+        if (!is_string($path)) {
             return null;
         }
 
