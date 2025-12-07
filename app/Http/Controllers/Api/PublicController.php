@@ -117,11 +117,20 @@ class PublicController extends Controller
     public function events(Request $request)
     {
         $limit = min((int)$request->query('limit', 20), 100);
+        $categoryId = $request->query('category_id');
+
         $query = Event::query()
-            ->with('organization:id,organization_name')
+            ->with([
+                'organization:id,organization_name',
+                'category:id,name',
+            ])
             ->where('status', 'published')
             ->orderBy('starting_date')
             ->orderByDesc('created_at');
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
 
         $events = $query->limit($limit)->get([
             'id',
@@ -132,6 +141,7 @@ class PublicController extends Controller
             'end_date',
             'location',
             'organization_id',
+            'category_id',
         ])->map(function ($event) {
             return [
                 'id' => $event->id,
@@ -142,10 +152,21 @@ class PublicController extends Controller
                 'location' => $event->location,
                 'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
                 'organizationName' => $event->organization?->organization_name,
+                'category_id' => $event->category_id,
+                'category' => $event->category ? [
+                    'id' => $event->category->id,
+                    'name' => $event->category->name,
+                ] : null,
             ];
         });
 
-        return response()->json(['success' => true, 'events' => $events]);
+        return response()->json([
+            'success' => true,
+            'events' => $events,
+            'filters' => [
+                'category_id' => $categoryId,
+            ],
+        ]);
     }
 
     public function eventHighlights(Request $request)
@@ -187,9 +208,15 @@ class PublicController extends Controller
     {
         $limit = min((int)$request->query('limit', 20), 100);
 
+        $categoryId = $request->query('category_id');
+
         $offers = Offer::query()
-            ->with('organization:id,organization_name')
+            ->with([
+                'organization:id,organization_name',
+                'category:id,name',
+            ])
             ->where('status', 'active')
+            ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
             ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -205,6 +232,7 @@ class PublicController extends Controller
                 'cover',
                 'images',
                 'organization_id',
+                'category_id',
             ])->map(function ($offer) {
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
@@ -218,10 +246,21 @@ class PublicController extends Controller
                     'offer_type' => $offer->offer_type,
                     'image' => $offer->cover ?: ($images[0] ?? null),
                     'organizationName' => $offer->organization?->organization_name,
+                    'category_id' => $offer->category_id,
+                    'category' => $offer->category ? [
+                        'id' => $offer->category->id,
+                        'name' => $offer->category->name,
+                    ] : null,
                 ];
             });
 
-        return response()->json(['success' => true, 'offers' => $offers]);
+        return response()->json([
+            'success' => true,
+            'offers' => $offers,
+            'filters' => [
+                'category_id' => $categoryId,
+            ],
+        ]);
     }
 
     public function offerHighlights(Request $request)
