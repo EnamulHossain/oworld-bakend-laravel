@@ -10,6 +10,8 @@ Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
     Route::get('me', [AuthController::class, 'me'])->middleware('auth:sanctum');
+    Route::get('google/redirect', [AuthController::class, 'redirectToGoogle']);
+    Route::get('google/callback', [AuthController::class, 'handleGoogleCallback']);
 });
 
 Route::get('public/categories', [PublicController::class, 'categories']);

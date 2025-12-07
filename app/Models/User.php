@@ -29,6 +29,8 @@ class User extends Authenticatable
         'organization_name',
         'business_type',
         'phone',
+        'google_id',
+        'avatar',
     ];
 
     /**
