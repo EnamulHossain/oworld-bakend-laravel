@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Concerns\FormatsUser;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Storage;
 
 class UserProfileController extends Controller
 {
@@ -45,6 +46,28 @@ class UserProfileController extends Controller
 
         return response()->json([
             'message' => 'Profile updated successfully.',
+            'user' => $this->formatUser($user),
+        ]);
+    }
+
+    public function updateAvatar(Request $request)
+    {
+        $data = $request->validate([
+            'avatar' => ['required', 'image', 'max:2048'],
+        ]);
+
+        $user = $request->user();
+
+        if ($user->avatar && !str_starts_with($user->avatar, 'http') && Storage::disk('public')->exists($user->avatar)) {
+            Storage::disk('public')->delete($user->avatar);
+        }
+
+        $path = $request->file('avatar')->store('avatars', 'public');
+        $user->avatar = $path;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Avatar updated successfully.',
             'user' => $this->formatUser($user),
         ]);
     }

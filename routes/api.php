@@ -30,6 +30,7 @@ Route::get('public/settings/{key}', [PublicController::class, 'setting']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('profile', [UserProfileController::class, 'show']);
     Route::match(['put', 'patch'], 'profile', [UserProfileController::class, 'update']);
+    Route::post('profile/avatar', [UserProfileController::class, 'updateAvatar']);
 
     Route::get('wishlist', [WishlistController::class, 'index']);
     Route::post('wishlist', [WishlistController::class, 'store']);
