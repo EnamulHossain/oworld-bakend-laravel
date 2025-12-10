@@ -29,6 +29,8 @@ class User extends Authenticatable
         'organization_name',
         'business_type',
         'phone',
+        'full_name',
+        'about',
         'google_id',
         'avatar',
     ];
@@ -79,5 +81,10 @@ class User extends Authenticatable
     public function organizationOffers()
     {
         return $this->hasMany(Offer::class, 'organization_id');
+    }
+
+    public function wishlistItems()
+    {
+        return $this->hasMany(WishlistItem::class);
     }
 }

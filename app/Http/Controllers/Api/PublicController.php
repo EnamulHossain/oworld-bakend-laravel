@@ -204,6 +204,38 @@ class PublicController extends Controller
         return response()->json(['success' => true, 'events' => $events]);
     }
 
+    public function eventDetail($id)
+    {
+        $event = Event::query()
+            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->where('status', 'published')
+            ->find($id);
+
+        if (!$event) {
+            return response()->json(['error' => 'Event not found.'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'event' => [
+                'id' => $event->id,
+                'name' => $event->name,
+                'description' => $event->description,
+                'banner' => $event->banner ?? [],
+                'starting_date' => $event->starting_date,
+                'end_date' => $event->end_date,
+                'location' => $event->location,
+                'organization' => $event->organization ? [
+                    'organizationName' => $event->organization->organization_name,
+                ] : null,
+                'category' => $event->category ? [
+                    'id' => $event->category->id,
+                    'name' => $event->category->name,
+                ] : null,
+            ],
+        ]);
+    }
+
     public function offers(Request $request)
     {
         $limit = min((int)$request->query('limit', 20), 100);
@@ -306,6 +338,44 @@ class PublicController extends Controller
             });
 
         return response()->json(['success' => true, 'highlights' => $offers]);
+    }
+
+    public function offerDetail($id)
+    {
+        $offer = Offer::query()
+            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->where('status', 'active')
+            ->find($id);
+
+        if (!$offer) {
+            return response()->json(['error' => 'Offer not found.'], 404);
+        }
+
+        $images = is_array($offer->images) ? $offer->images : [];
+
+        return response()->json([
+            'success' => true,
+            'offer' => [
+                'id' => $offer->id,
+                'name' => $offer->name,
+                'details' => $offer->details,
+                'start_date' => $offer->start_date,
+                'end_date' => $offer->end_date,
+                'discount_type' => $offer->discount_type,
+                'discount_value' => $offer->discount_value,
+                'offer_type' => $offer->offer_type,
+                'cover' => $offer->cover,
+                'images' => $images,
+                'thumbnail' => $offer->thumbnail,
+                'organization' => $offer->organization ? [
+                    'organizationName' => $offer->organization->organization_name,
+                ] : null,
+                'category' => $offer->category ? [
+                    'id' => $offer->category->id,
+                    'name' => $offer->category->name,
+                ] : null,
+            ],
+        ]);
     }
 
     public function search(Request $request)

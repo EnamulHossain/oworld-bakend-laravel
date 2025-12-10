@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\FormatsUser;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
+    use FormatsUser;
+
     public function register(Request $request)
     {
         $data = $request->validate([
@@ -23,6 +26,8 @@ class AuthController extends Controller
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'full_name' => ['nullable', 'string', 'max:120'],
+            'about' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $role = $data['role'] ?? 'user';
@@ -43,6 +48,8 @@ class AuthController extends Controller
             'organization_name' => $data['organization_name'] ?? null,
             'business_type' => $data['business_type'] ?? null,
             'phone' => $data['phone'] ?? null,
+            'full_name' => $data['full_name'] ?? null,
+            'about' => $data['about'] ?? null,
         ]);
 
         Role::firstOrCreate(['name' => $role, 'guard_name' => 'sanctum']);
@@ -125,11 +132,11 @@ class AuthController extends Controller
             $user = $this->createUserFromGoogle($googleUser, $role);
         } else {
             $user->forceFill([
-                'google_id' => $user->google_id ?: $googleUser->getId(),
-                'avatar' => $googleUser->getAvatar(),
-            ])->save();
+            'google_id' => $user->google_id ?: $googleUser->getId(),
+            'avatar' => $googleUser->getAvatar(),
+        ])->save();
 
-            Role::firstOrCreate(['name' => $user->role, 'guard_name' => 'sanctum']);
+        Role::firstOrCreate(['name' => $user->role, 'guard_name' => 'sanctum']);
             $user->syncRoles([$user->role]);
         }
 
@@ -148,21 +155,6 @@ class AuthController extends Controller
         ]);
     }
 
-    private function formatUser(User $user): array
-    {
-        return [
-            'id' => $user->id,
-            'username' => $user->username,
-            'email' => $user->email,
-            'role' => $user->role,
-            'organizationName' => $user->organization_name,
-            'business_type' => $user->business_type,
-            'phone' => $user->phone,
-            'avatar' => $user->avatar,
-            'created_at' => $user->created_at,
-        ];
-    }
-
     private function createUserFromGoogle($googleUser, string $role): User
     {
         $validatedRole = $this->sanitizeRole($role);
@@ -176,6 +168,7 @@ class AuthController extends Controller
             'email' => $googleUser->getEmail(),
             'password' => Hash::make(Str::random(16)),
             'role' => $validatedRole,
+            'full_name' => $googleUser->getName(),
             'google_id' => $googleUser->getId(),
             'avatar' => $googleUser->getAvatar(),
         ]);

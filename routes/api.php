@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\PublicController;
+use App\Http\Controllers\Api\UserProfileController;
+use App\Http\Controllers\Api\WishlistController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -18,10 +20,21 @@ Route::get('public/categories', [PublicController::class, 'categories']);
 Route::get('public/categories/{id}', [PublicController::class, 'categoryDetail']);
 Route::get('public/events', [PublicController::class, 'events']);
 Route::get('public/events/highlights', [PublicController::class, 'eventHighlights']);
+Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);
 Route::get('public/offers', [PublicController::class, 'offers']);
 Route::get('public/offers/highlights', [PublicController::class, 'offerHighlights']);
+Route::get('public/offers/{offer}', [PublicController::class, 'offerDetail']);
 Route::get('public/search', [PublicController::class, 'search']);
 Route::get('public/settings/{key}', [PublicController::class, 'setting']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('profile', [UserProfileController::class, 'show']);
+    Route::match(['put', 'patch'], 'profile', [UserProfileController::class, 'update']);
+
+    Route::get('wishlist', [WishlistController::class, 'index']);
+    Route::post('wishlist', [WishlistController::class, 'store']);
+    Route::delete('wishlist', [WishlistController::class, 'destroy']);
+});
 
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('users', [AdminController::class, 'users']);
