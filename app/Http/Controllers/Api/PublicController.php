@@ -63,6 +63,7 @@ class PublicController extends Controller
                 'starting_date',
                 'end_date',
                 'location',
+                'address',
                 'organization_id',
             ]);
 
@@ -78,6 +79,7 @@ class PublicController extends Controller
                 'details',
                 'start_date',
                 'end_date',
+                'address',
                 'discount_type',
                 'discount_value',
                 'offer_type',
@@ -94,6 +96,7 @@ class PublicController extends Controller
                 'date' => $event->starting_date,
                 'endDate' => $event->end_date,
                 'location' => $event->location,
+                'address' => $event->address,
                 'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
                 'organizationName' => $event->organization?->organization_name,
                 'type' => 'event',
@@ -153,6 +156,7 @@ class PublicController extends Controller
             'starting_date',
             'end_date',
             'location',
+            'address',
             'organization_id',
             'category_id',
         ])->map(function ($event) {
@@ -160,11 +164,12 @@ class PublicController extends Controller
                 'id' => $event->id,
                 'title' => $event->name,
                 'description' => $event->description,
-                'date' => $event->starting_date,
-                'endDate' => $event->end_date,
-                'location' => $event->location,
-                'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
-                'organizationName' => $event->organization?->organization_name,
+            'date' => $event->starting_date,
+            'endDate' => $event->end_date,
+            'location' => $event->location,
+            'address' => $event->address,
+            'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
+            'organizationName' => $event->organization?->organization_name,
                 'category_id' => $event->category_id,
                 'category' => $event->category ? [
                     'id' => $event->category->id,
@@ -200,6 +205,7 @@ class PublicController extends Controller
                 'starting_date',
                 'end_date',
                 'location',
+                'address',
                 'organization_id',
             ])->map(function ($event) {
                 return [
@@ -207,12 +213,13 @@ class PublicController extends Controller
                     'name' => $event->name,
                     'description' => $event->description,
                     'banner' => $event->banner ?? [],
-                    'starting_date' => $event->starting_date,
-                    'end_date' => $event->end_date,
-                    'location' => $event->location,
-                    'organizationName' => $event->organization?->organization_name,
-                ];
-            });
+                'starting_date' => $event->starting_date,
+                'end_date' => $event->end_date,
+                'location' => $event->location,
+                'address' => $event->address,
+                'organizationName' => $event->organization?->organization_name,
+            ];
+        });
 
         return response()->json(['success' => true, 'events' => $events]);
     }
@@ -238,6 +245,7 @@ class PublicController extends Controller
                 'starting_date' => $event->starting_date,
                 'end_date' => $event->end_date,
                 'location' => $event->location,
+                'address' => $event->address,
                 'organization' => $event->organization ? [
                     'organizationName' => $event->organization->organization_name,
                 ] : null,
@@ -259,6 +267,7 @@ class PublicController extends Controller
             ->with([
                 'organization:id,organization_name',
                 'category:id,name',
+                'area:id,name',
             ])
             ->where('status', 'active')
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
@@ -278,6 +287,7 @@ class PublicController extends Controller
                 'images',
                 'organization_id',
                 'category_id',
+                'area_id',
             ])->map(function ($offer) {
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
@@ -286,15 +296,21 @@ class PublicController extends Controller
                     'description' => $offer->details,
                     'date' => $offer->start_date,
                     'endDate' => $offer->end_date,
+                    'address' => $offer->address,
                     'discount_type' => $offer->discount_type,
                     'discount_value' => $offer->discount_value,
                     'offer_type' => $offer->offer_type,
                     'image' => $offer->cover ?: ($images[0] ?? null),
                     'organizationName' => $offer->organization?->organization_name,
                     'category_id' => $offer->category_id,
+                    'area_id' => $offer->area_id,
                     'category' => $offer->category ? [
                         'id' => $offer->category->id,
                         'name' => $offer->category->name,
+                    ] : null,
+                    'area' => $offer->area ? [
+                        'id' => $offer->area->id,
+                        'name' => $offer->area->name,
                     ] : null,
                 ];
             });
@@ -374,6 +390,7 @@ class PublicController extends Controller
                 'details' => $offer->details,
                 'start_date' => $offer->start_date,
                 'end_date' => $offer->end_date,
+                'address' => $offer->address,
                 'discount_type' => $offer->discount_type,
                 'discount_value' => $offer->discount_value,
                 'offer_type' => $offer->offer_type,
@@ -416,17 +433,19 @@ class PublicController extends Controller
             ->where(function ($builder) use ($q) {
                 $builder->where('name', 'like', "%{$q}%")
                     ->orWhere('description', 'like', "%{$q}%")
-                    ->orWhere('location', 'like', "%{$q}%");
+                    ->orWhere('location', 'like', "%{$q}%")
+                    ->orWhere('address', 'like', "%{$q}%");
             })
             ->orderBy('starting_date')
             ->limit($limit)
-            ->get(['id', 'name', 'description', 'starting_date', 'location'])
+            ->get(['id', 'name', 'description', 'starting_date', 'location', 'address'])
             ->map(fn ($event) => [
                 'type' => 'event',
                 'id' => $event->id,
                 'title' => $event->name,
                 'description' => $event->description,
                 'location' => $event->location,
+                'address' => $event->address,
                 'date' => $event->starting_date,
             ]);
 

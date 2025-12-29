@@ -14,6 +14,7 @@ class Offer extends Model
         'details',
         'start_date',
         'end_date',
+        'address',
         'discount_type',
         'discount_value',
         'thumbnail',

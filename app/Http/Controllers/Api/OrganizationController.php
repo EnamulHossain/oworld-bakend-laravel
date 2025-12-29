@@ -45,7 +45,7 @@ class OrganizationController extends Controller
         $userId = $request->user()->id;
         $query = Event::query()
             ->where('organization_id', $userId)
-            ->with('category:id,name')
+            ->with(['category:id,name', 'area:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -70,6 +70,8 @@ class OrganizationController extends Controller
             'starting_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:starting_date'],
             'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
         ]);
 
@@ -97,6 +99,8 @@ class OrganizationController extends Controller
             'starting_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:starting_date'],
             'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
         ]);
 
@@ -158,6 +162,7 @@ class OrganizationController extends Controller
             'details' => ['nullable', 'string'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:start_date'],
+            'address' => ['nullable', 'string', 'max:255'],
             'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'thumbnail' => ['nullable', 'string', 'max:500'],
@@ -208,6 +213,7 @@ class OrganizationController extends Controller
             'details' => ['nullable', 'string'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:start_date'],
+            'address' => ['nullable', 'string', 'max:255'],
             'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'thumbnail' => ['nullable', 'string', 'max:500'],

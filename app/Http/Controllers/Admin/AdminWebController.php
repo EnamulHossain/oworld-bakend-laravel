@@ -104,6 +104,8 @@ class AdminWebController extends Controller
             'starting_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:starting_date'],
             'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
@@ -126,6 +128,8 @@ class AdminWebController extends Controller
             'starting_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:starting_date'],
             'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);

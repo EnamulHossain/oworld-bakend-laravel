@@ -149,7 +149,7 @@ class AdminController extends Controller
     public function listEvents(Request $request)
     {
         $query = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
@@ -186,6 +186,8 @@ class AdminController extends Controller
             'starting_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:starting_date'],
             'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
@@ -209,6 +211,8 @@ class AdminController extends Controller
             'starting_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:starting_date'],
             'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
@@ -276,6 +280,7 @@ class AdminController extends Controller
             'details' => ['nullable', 'string'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:start_date'],
+            'address' => ['nullable', 'string', 'max:255'],
             'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'thumbnail' => ['nullable', 'string', 'max:500'],
@@ -322,6 +327,7 @@ class AdminController extends Controller
             'details' => ['nullable', 'string'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:start_date'],
+            'address' => ['nullable', 'string', 'max:255'],
             'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'thumbnail' => ['nullable', 'string', 'max:500'],

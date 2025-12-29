@@ -17,6 +17,8 @@ class Event extends Model
         'starting_date',
         'end_date',
         'location',
+        'area_id',
+        'address',
         'category_id',
         'created_by',
         'organization_id',
@@ -36,6 +38,11 @@ class Event extends Model
     public function organization()
     {
         return $this->belongsTo(User::class, 'organization_id');
+    }
+
+    public function area()
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function creator()
