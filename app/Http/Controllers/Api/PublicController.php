@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Area;
 use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
@@ -22,6 +23,18 @@ class PublicController extends Controller
         return response()->json([
             'success' => true,
             'categories' => $categories,
+        ]);
+    }
+
+    public function areas()
+    {
+        $areas = Area::query()
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json([
+            'success' => true,
+            'areas' => $areas,
         ]);
     }
 

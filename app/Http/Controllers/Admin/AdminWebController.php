@@ -189,7 +189,23 @@ class AdminWebController extends Controller
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
             'event_id' => ['nullable', 'exists:events,id'],
-            'offer_type' => ['nullable', Rule::in(['general', 'category', 'event', 'special'])],
+            'area_id' => ['nullable', 'exists:areas,id'],
+            'offer_type' => [
+                'nullable',
+                Rule::in([
+                    'general',
+                    'category',
+                    'event',
+                    'special',
+                    'bogo',
+                    'discount',
+                    'combo',
+                    'happy_hour',
+                    'lunch_hour',
+                    'late_night',
+                    'complimentary',
+                ]),
+            ],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
@@ -234,7 +250,23 @@ class AdminWebController extends Controller
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
             'event_id' => ['nullable', 'exists:events,id'],
-            'offer_type' => ['nullable', Rule::in(['general', 'category', 'event', 'special'])],
+            'area_id' => ['nullable', 'exists:areas,id'],
+            'offer_type' => [
+                'nullable',
+                Rule::in([
+                    'general',
+                    'category',
+                    'event',
+                    'special',
+                    'bogo',
+                    'discount',
+                    'combo',
+                    'happy_hour',
+                    'lunch_hour',
+                    'late_night',
+                    'complimentary',
+                ]),
+            ],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 

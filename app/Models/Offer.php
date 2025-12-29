@@ -23,6 +23,7 @@ class Offer extends Model
         'category_id',
         'organization_id',
         'event_id',
+        'area_id',
         'offer_type',
         'status',
         'created_by',
@@ -50,6 +51,11 @@ class Offer extends Model
     public function event()
     {
         return $this->belongsTo(Event::class);
+    }
+
+    public function area()
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function creator()

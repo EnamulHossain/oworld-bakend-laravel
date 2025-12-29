@@ -18,6 +18,7 @@ Route::prefix('auth')->group(function () {
 
 Route::get('public/categories', [PublicController::class, 'categories']);
 Route::get('public/categories/{id}', [PublicController::class, 'categoryDetail']);
+Route::get('public/areas', [PublicController::class, 'areas']);
 Route::get('public/events', [PublicController::class, 'events']);
 Route::get('public/events/highlights', [PublicController::class, 'eventHighlights']);
 Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);

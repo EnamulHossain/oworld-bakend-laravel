@@ -137,7 +137,7 @@ class OrganizationController extends Controller
         $userId = $request->user()->id;
         $query = Offer::query()
             ->where('organization_id', $userId)
-            ->with(['category:id,name', 'event:id,name'])
+            ->with(['category:id,name', 'event:id,name', 'area:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -166,7 +166,23 @@ class OrganizationController extends Controller
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
-            'offer_type' => ['nullable', Rule::in(['general', 'category', 'event', 'special'])],
+            'area_id' => ['nullable', 'exists:areas,id'],
+            'offer_type' => [
+                'nullable',
+                Rule::in([
+                    'general',
+                    'category',
+                    'event',
+                    'special',
+                    'bogo',
+                    'discount',
+                    'combo',
+                    'happy_hour',
+                    'lunch_hour',
+                    'late_night',
+                    'complimentary',
+                ]),
+            ],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
@@ -200,7 +216,23 @@ class OrganizationController extends Controller
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
-            'offer_type' => ['nullable', Rule::in(['general', 'category', 'event', 'special'])],
+            'area_id' => ['nullable', 'exists:areas,id'],
+            'offer_type' => [
+                'nullable',
+                Rule::in([
+                    'general',
+                    'category',
+                    'event',
+                    'special',
+                    'bogo',
+                    'discount',
+                    'combo',
+                    'happy_hour',
+                    'lunch_hour',
+                    'late_night',
+                    'complimentary',
+                ]),
+            ],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
