@@ -44,6 +44,7 @@ class WebAuthController extends Controller
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'dob' => ['nullable', 'date'],
         ]);
 
         if ($data['role'] === 'organization') {
@@ -62,6 +63,7 @@ class WebAuthController extends Controller
             'organization_name' => $data['role'] === 'organization' ? $data['organization_name'] : null,
             'business_type' => $data['role'] === 'organization' ? $data['business_type'] : null,
             'phone' => $data['role'] === 'organization' ? $data['phone'] : null,
+            'dob' => $data['dob'] ?? null,
         ]);
 
         Role::firstOrCreate(['name' => $data['role'], 'guard_name' => 'sanctum']);

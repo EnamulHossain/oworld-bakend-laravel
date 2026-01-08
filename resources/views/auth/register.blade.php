@@ -36,6 +36,12 @@
                         </div>
                         <div class="grid gap-4 sm:grid-cols-2">
                             <div class="space-y-2">
+                                <label class="text-sm font-semibold text-slate-800">Date of birth</label>
+                                <input value="{{ old('dob') }}" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" type="date" name="dob">
+                            </div>
+                        </div>
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <div class="space-y-2">
                                 <label class="text-sm font-semibold text-slate-800">Password</label>
                                 <input class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" type="password" name="password" required minlength="6">
                             </div>

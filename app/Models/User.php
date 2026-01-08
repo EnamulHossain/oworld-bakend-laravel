@@ -30,6 +30,7 @@ class User extends Authenticatable
         'business_type',
         'phone',
         'full_name',
+        'dob',
         'about',
         'google_id',
         'avatar',
@@ -55,6 +56,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'dob' => 'date',
         ];
     }
 

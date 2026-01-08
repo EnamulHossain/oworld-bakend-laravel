@@ -27,6 +27,7 @@ class AuthController extends Controller
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
             'full_name' => ['nullable', 'string', 'max:120'],
+            'dob' => ['nullable', 'date'],
             'about' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -49,6 +50,7 @@ class AuthController extends Controller
             'business_type' => $data['business_type'] ?? null,
             'phone' => $data['phone'] ?? null,
             'full_name' => $data['full_name'] ?? null,
+            'dob' => $data['dob'] ?? null,
             'about' => $data['about'] ?? null,
         ]);
 

@@ -26,6 +26,7 @@ trait FormatsUser
             'id' => $user->id,
             'username' => $user->username,
             'fullName' => $user->full_name,
+            'dob' => $user->dob,
             'about' => $user->about,
             'email' => $user->email,
             'role' => $user->role,
