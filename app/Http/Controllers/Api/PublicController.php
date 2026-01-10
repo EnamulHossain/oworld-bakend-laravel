@@ -280,6 +280,11 @@ class PublicController extends Controller
                 'details',
                 'start_date',
                 'end_date',
+                'address',
+                'facebook_url',
+                'instagram_url',
+                'website_url',
+                'google_map_url',
                 'discount_type',
                 'discount_value',
                 'offer_type',
@@ -297,6 +302,10 @@ class PublicController extends Controller
                     'date' => $offer->start_date,
                     'endDate' => $offer->end_date,
                     'address' => $offer->address,
+                    'facebook_url' => $offer->facebook_url,
+                    'instagram_url' => $offer->instagram_url,
+                    'website_url' => $offer->website_url,
+                    'google_map_url' => $offer->google_map_url,
                     'discount_type' => $offer->discount_type,
                     'discount_value' => $offer->discount_value,
                     'offer_type' => $offer->offer_type,
@@ -372,7 +381,7 @@ class PublicController extends Controller
     public function offerDetail($id)
     {
         $offer = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
             ->where('status', 'active')
             ->find($id);
 
@@ -391,6 +400,10 @@ class PublicController extends Controller
                 'start_date' => $offer->start_date,
                 'end_date' => $offer->end_date,
                 'address' => $offer->address,
+                'facebook_url' => $offer->facebook_url,
+                'instagram_url' => $offer->instagram_url,
+                'website_url' => $offer->website_url,
+                'google_map_url' => $offer->google_map_url,
                 'discount_type' => $offer->discount_type,
                 'discount_value' => $offer->discount_value,
                 'offer_type' => $offer->offer_type,
@@ -403,6 +416,10 @@ class PublicController extends Controller
                 'category' => $offer->category ? [
                     'id' => $offer->category->id,
                     'name' => $offer->category->name,
+                ] : null,
+                'area' => $offer->area ? [
+                    'id' => $offer->area->id,
+                    'name' => $offer->area->name,
                 ] : null,
             ],
         ]);
