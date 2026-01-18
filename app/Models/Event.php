@@ -20,6 +20,7 @@ class Event extends Model
         'area_id',
         'address',
         'category_id',
+        'filter_type_id',
         'created_by',
         'organization_id',
     ];
@@ -43,6 +44,11 @@ class Event extends Model
     public function area()
     {
         return $this->belongsTo(Area::class);
+    }
+
+    public function filterType()
+    {
+        return $this->belongsTo(FilterType::class);
     }
 
     public function creator()
