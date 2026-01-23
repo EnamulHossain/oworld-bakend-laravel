@@ -390,6 +390,7 @@ class PublicController extends Controller
         }
 
         $images = is_array($offer->images) ? $offer->images : [];
+        $videos = is_array($offer->videos) ? $offer->videos : [];
 
         return response()->json([
             'success' => true,
@@ -409,6 +410,7 @@ class PublicController extends Controller
                 'offer_type' => $offer->offer_type,
                 'cover' => $offer->cover,
                 'images' => $images,
+                'videos' => $videos,
                 'thumbnail' => $offer->thumbnail,
                 'organization' => $offer->organization ? [
                     'organizationName' => $offer->organization->organization_name,

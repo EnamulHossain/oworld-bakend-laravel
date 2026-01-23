@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\FormatsUser;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Event;
@@ -9,10 +10,15 @@ use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Spatie\Permission\Models\Role;
 
 class AdminController extends Controller
 {
+    use FormatsUser;
+
     public function users(Request $request)
     {
         $users = User::query()
@@ -62,6 +68,92 @@ class AdminController extends Controller
             ->get(['id', 'username', 'email', 'organization_name']);
 
         return response()->json(['success' => true, 'organizations' => $organizations]);
+    }
+
+    public function storeOrganization(Request $request)
+    {
+        $data = $request->validate([
+            'organization_name' => ['required', 'string', 'max:255'],
+            'username' => ['nullable', 'string', 'max:50', 'unique:users,username'],
+            'email' => ['nullable', 'email', 'unique:users,email'],
+            'password' => ['nullable', 'string', 'min:6'],
+            'business_type' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $organizationName = trim($data['organization_name']);
+        if ($organizationName === '') {
+            return response()->json(['error' => 'Organization name is required.'], 422);
+        }
+        $existing = $this->findExistingOrganization($organizationName);
+        if ($existing) {
+            return response()->json([
+                'success' => true,
+                'organization' => $this->formatUser($existing),
+                'created' => false,
+            ]);
+        }
+
+        $usernameInput = $data['username'] ?? $organizationName;
+        $username = $this->generateUniqueUsername($usernameInput);
+        $email = $data['email'] ?? $this->generateUniqueOrganizationEmail($organizationName);
+        $password = $data['password'] ?? Str::random(16);
+
+        $organization = User::create([
+            'username' => $username,
+            'email' => $email,
+            'password' => Hash::make($password),
+            'role' => 'organization',
+            'organization_name' => $organizationName,
+            'business_type' => $data['business_type'] ?? null,
+            'phone' => $data['phone'] ?? null,
+            'full_name' => null,
+            'dob' => null,
+            'about' => null,
+        ]);
+
+        Role::firstOrCreate(['name' => 'organization', 'guard_name' => 'sanctum']);
+        $organization->syncRoles(['organization']);
+
+        return response()->json([
+            'success' => true,
+            'organization' => $this->formatUser($organization),
+            'created' => true,
+        ], 201);
+    }
+
+    public function updateOrganization(Request $request, User $user)
+    {
+        $data = $request->validate([
+            'organization_name' => ['sometimes', 'string', 'max:255'],
+            'username' => ['sometimes', 'string', 'max:50', Rule::unique('users', 'username')->ignore($user->id)],
+            'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
+            'password' => ['nullable', 'string', 'min:6'],
+            'business_type' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        if (array_key_exists('organization_name', $data)) {
+            $data['organization_name'] = trim($data['organization_name']);
+        }
+
+        if (!empty($data['password'])) {
+            $data['password'] = Hash::make($data['password']);
+        } else {
+            unset($data['password']);
+        }
+
+        $user->fill($data);
+        $user->role = 'organization';
+        $user->save();
+
+        Role::firstOrCreate(['name' => 'organization', 'guard_name' => 'sanctum']);
+        $user->syncRoles(['organization']);
+
+        return response()->json([
+            'success' => true,
+            'organization' => $this->formatUser($user),
+        ]);
     }
 
     public function stats()
@@ -488,6 +580,51 @@ class AdminController extends Controller
             'fileUrl' => '/storage/' . $path,
             'imageUrl' => '/storage/' . $path,
         ], 201);
+    }
+
+    private function findExistingOrganization(string $organizationName): ?User
+    {
+        $normalized = strtolower(trim($organizationName));
+        if ($normalized === '') {
+            return null;
+        }
+
+        return User::query()
+            ->where('role', 'organization')
+            ->where(function ($query) use ($normalized) {
+                $query->whereRaw('LOWER(organization_name) = ?', [$normalized])
+                    ->orWhereRaw('LOWER(username) = ?', [$normalized]);
+            })
+            ->first();
+    }
+
+    private function generateUniqueUsername(string $base): string
+    {
+        $candidateBase = trim($base) !== '' ? trim($base) : 'organization';
+        $candidateBase = substr($candidateBase, 0, 50);
+        $candidate = $candidateBase;
+        $counter = 1;
+
+        while (User::where('username', $candidate)->exists()) {
+            $suffix = (string)$counter;
+            $trimLength = max(0, 50 - strlen($suffix));
+            $candidate = substr($candidateBase, 0, $trimLength) . $suffix;
+            $counter++;
+        }
+
+        return $candidate;
+    }
+
+    private function generateUniqueOrganizationEmail(string $organizationName): string
+    {
+        $slug = Str::slug($organizationName);
+        $slug = $slug !== '' ? $slug : 'organization';
+
+        do {
+            $email = 'org-' . $slug . '-' . Str::random(6) . '@auto.local';
+        } while (User::where('email', $email)->exists());
+
+        return $email;
     }
 
     private function toArrayField($value): array

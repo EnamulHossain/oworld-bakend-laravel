@@ -43,6 +43,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::patch('users/{user}/role', [AdminController::class, 'updateUserRole']);
     Route::delete('users/{user}', [AdminController::class, 'deleteUser']);
     Route::get('organizations', [AdminController::class, 'organizations']);
+    Route::post('organizations', [AdminController::class, 'storeOrganization']);
+    Route::put('organizations/{user}', [AdminController::class, 'updateOrganization']);
     Route::get('stats', [AdminController::class, 'stats']);
 
     Route::get('categories', [AdminController::class, 'listCategories']);
