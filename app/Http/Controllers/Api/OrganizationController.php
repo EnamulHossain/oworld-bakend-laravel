@@ -73,6 +73,7 @@ class OrganizationController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'event')],
         ]);
 
         $event = Event::create([
@@ -102,6 +103,7 @@ class OrganizationController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'event')],
         ]);
 
         if (array_key_exists('banner', $data)) {
@@ -174,6 +176,7 @@ class OrganizationController extends Controller
             'images' => ['nullable'],
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'offer')],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'offer_type' => [
@@ -229,6 +232,7 @@ class OrganizationController extends Controller
             'images' => ['nullable'],
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'offer')],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'offer_type' => [

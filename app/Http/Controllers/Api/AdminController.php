@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Api\Concerns\FormatsUser;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Event;
+use App\Models\FilterType;
 use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -17,8 +17,6 @@ use Spatie\Permission\Models\Role;
 
 class AdminController extends Controller
 {
-    use FormatsUser;
-
     public function users(Request $request)
     {
         $users = User::query()
@@ -65,9 +63,12 @@ class AdminController extends Controller
                 });
             })
             ->orderByDesc('created_at')
-            ->get(['id', 'username', 'email', 'organization_name']);
+            ->get(['id', 'username', 'email', 'organization_name', 'business_type', 'phone', 'created_at']);
 
-        return response()->json(['success' => true, 'organizations' => $organizations]);
+        return response()->json([
+            'success' => true,
+            'organizations' => $organizations->map(fn (User $org) => $this->formatOrganization($org)),
+        ]);
     }
 
     public function storeOrganization(Request $request)
@@ -85,11 +86,12 @@ class AdminController extends Controller
         if ($organizationName === '') {
             return response()->json(['error' => 'Organization name is required.'], 422);
         }
+
         $existing = $this->findExistingOrganization($organizationName);
         if ($existing) {
             return response()->json([
                 'success' => true,
-                'organization' => $this->formatUser($existing),
+                'organization' => $this->formatOrganization($existing),
                 'created' => false,
             ]);
         }
@@ -117,13 +119,17 @@ class AdminController extends Controller
 
         return response()->json([
             'success' => true,
-            'organization' => $this->formatUser($organization),
+            'organization' => $this->formatOrganization($organization),
             'created' => true,
         ], 201);
     }
 
     public function updateOrganization(Request $request, User $user)
     {
+        if ($user->role !== 'organization') {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
         $data = $request->validate([
             'organization_name' => ['sometimes', 'string', 'max:255'],
             'username' => ['sometimes', 'string', 'max:50', Rule::unique('users', 'username')->ignore($user->id)],
@@ -152,7 +158,7 @@ class AdminController extends Controller
 
         return response()->json([
             'success' => true,
-            'organization' => $this->formatUser($user),
+            'organization' => $this->formatOrganization($user),
         ]);
     }
 
@@ -241,9 +247,10 @@ class AdminController extends Controller
     public function listEvents(Request $request)
     {
         $query = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name', 'filterType:id,name,type'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
+            ->when($request->query('filter_type_id'), fn ($q, $filterTypeId) => $q->where('filter_type_id', $filterTypeId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -281,6 +288,7 @@ class AdminController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'event')],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
 
@@ -306,6 +314,7 @@ class AdminController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'event')],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
 
@@ -340,8 +349,9 @@ class AdminController extends Controller
     public function listOffers(Request $request)
     {
         $query = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name', 'filterType:id,name,type'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            ->when($request->query('filter_type_id'), fn ($q, $filterTypeId) => $q->where('filter_type_id', $filterTypeId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -384,6 +394,7 @@ class AdminController extends Controller
             'images' => ['nullable'],
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'offer')],
             'organization_id' => ['required', 'exists:users,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
@@ -435,6 +446,7 @@ class AdminController extends Controller
             'images' => ['nullable'],
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'offer')],
             'organization_id' => ['nullable', 'exists:users,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
@@ -582,6 +594,58 @@ class AdminController extends Controller
         ], 201);
     }
 
+    public function listFilterTypes(Request $request)
+    {
+        $query = FilterType::query();
+        if ($request->query('type')) {
+            $query->where('type', $request->query('type'));
+        }
+
+        $filterTypes = $query->orderBy('type')->orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'filterTypes' => $filterTypes,
+        ]);
+    }
+
+    public function storeFilterType(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100', Rule::unique('filter_types', 'name')->where('type', $request->input('type'))],
+            'type' => ['required', Rule::in(['event', 'offer'])],
+        ]);
+
+        $filterType = FilterType::create($data);
+
+        return response()->json(['success' => true, 'filterType' => $filterType], 201);
+    }
+
+    public function updateFilterType(Request $request, FilterType $filterType)
+    {
+        $data = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('filter_types', 'name')
+                    ->where('type', $request->input('type'))
+                    ->ignore($filterType->id),
+            ],
+            'type' => ['required', Rule::in(['event', 'offer'])],
+        ]);
+
+        $filterType->update($data);
+
+        return response()->json(['success' => true, 'filterType' => $filterType]);
+    }
+
+    public function deleteFilterType(FilterType $filterType)
+    {
+        $filterType->delete();
+        return response()->json(['success' => true]);
+    }
+
     private function findExistingOrganization(string $organizationName): ?User
     {
         $normalized = strtolower(trim($organizationName));
@@ -635,7 +699,7 @@ class AdminController extends Controller
         if (is_string($value)) {
             return array_values(
                 array_filter(
-                    array_map('trim', preg_split('/\\r?\\n|,/', $value))
+                    array_map('trim', preg_split('/\r?\n|,/', $value))
                 )
             );
         }
@@ -651,5 +715,21 @@ class AdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function formatOrganization(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'username' => $user->username,
+            'email' => $user->email,
+            'organization_name' => $user->organization_name,
+            'organizationName' => $user->organization_name,
+            'business_type' => $user->business_type,
+            'businessType' => $user->business_type,
+            'phone' => $user->phone,
+            'created_at' => $user->created_at,
+            'createdAt' => $user->created_at,
+        ];
     }
 }
