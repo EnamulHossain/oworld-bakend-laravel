@@ -76,6 +76,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::post('filter-types', [AdminController::class, 'storeFilterType']);
     Route::put('filter-types/{filterType}', [AdminController::class, 'updateFilterType']);
     Route::delete('filter-types/{filterType}', [AdminController::class, 'deleteFilterType']);
+
+    Route::get('attributes', [AdminController::class, 'listAttributes']);
+    Route::post('attributes', [AdminController::class, 'storeAttribute']);
+    Route::put('attributes/{attribute}', [AdminController::class, 'updateAttribute']);
+    Route::delete('attributes/{attribute}', [AdminController::class, 'deleteAttribute']);
 });
 
 Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')->group(function () {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Attribute;
 use App\Models\Category;
 use App\Models\Event;
 use App\Models\FilterType;
@@ -10,6 +11,7 @@ use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -646,6 +648,105 @@ class AdminController extends Controller
         return response()->json(['success' => true]);
     }
 
+    public function listAttributes(Request $request)
+    {
+        $query = Attribute::query()
+            ->with(['values' => fn ($q) => $q->orderBy('id')]);
+
+        if ($request->boolean('with_categories')) {
+            $query->with(['categories:id,name']);
+        }
+
+        if ($request->query('search')) {
+            $term = $request->query('search');
+            $query->where('name', 'like', "%{$term}%");
+        }
+
+        $attributes = $query
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'attributes' => $attributes,
+        ]);
+    }
+
+    public function storeAttribute(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'values' => ['nullable', 'array'],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'exists:categories,id'],
+        ]);
+
+        return DB::transaction(function () use ($data) {
+            $attribute = Attribute::create([
+                'name' => $data['name'],
+            ]);
+
+            $values = $this->normalizeAttributeValues($data['values'] ?? []);
+            if (!empty($values)) {
+                $attribute->values()->createMany($values);
+            }
+
+            if (!empty($data['category_ids'])) {
+                $attribute->categories()->sync($data['category_ids']);
+            }
+
+            $attribute->load(['values' => fn ($q) => $q->orderBy('id')]);
+
+            return response()->json([
+                'success' => true,
+                'attribute' => $attribute,
+            ], 201);
+        });
+    }
+
+    public function updateAttribute(Request $request, Attribute $attribute)
+    {
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'values' => ['nullable', 'array'],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'exists:categories,id'],
+        ]);
+
+        return DB::transaction(function () use ($data, $attribute) {
+            if (array_key_exists('name', $data)) {
+                $attribute->name = $data['name'];
+            }
+            $attribute->save();
+
+            if (array_key_exists('values', $data)) {
+                $attribute->values()->delete();
+                $values = $this->normalizeAttributeValues($data['values'] ?? []);
+                if (!empty($values)) {
+                    $attribute->values()->createMany($values);
+                }
+            }
+
+            if (array_key_exists('category_ids', $data)) {
+                $attribute->categories()->sync($data['category_ids'] ?? []);
+            }
+
+            $attribute->load(['values' => fn ($q) => $q->orderBy('id')]);
+
+            return response()->json([
+                'success' => true,
+                'attribute' => $attribute,
+            ]);
+        });
+    }
+
+    public function deleteAttribute(Attribute $attribute)
+    {
+        $attribute->delete();
+        return response()->json(['success' => true]);
+    }
+
     private function findExistingOrganization(string $organizationName): ?User
     {
         $normalized = strtolower(trim($organizationName));
@@ -715,6 +816,37 @@ class AdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function normalizeAttributeValues($values): array
+    {
+        if (!is_array($values)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($values as $value) {
+            if (is_string($value)) {
+                $label = trim($value);
+                $color = null;
+            } elseif (is_array($value)) {
+                $label = trim((string)($value['value'] ?? ''));
+                $color = $value['color_code'] ?? null;
+            } else {
+                continue;
+            }
+
+            if ($label === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'value' => $label,
+                'color_code' => $color,
+            ];
+        }
+
+        return $normalized;
     }
 
     private function formatOrganization(User $user): array
