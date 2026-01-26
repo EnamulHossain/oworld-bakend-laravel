@@ -81,6 +81,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
 Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')->group(function () {
     Route::get('stats', [OrganizationController::class, 'stats']);
     Route::get('categories', [OrganizationController::class, 'categories']);
+    Route::get('attributes', [OrganizationController::class, 'attributes']);
 
     Route::get('events', [OrganizationController::class, 'listEvents']);
     Route::post('events', [OrganizationController::class, 'storeEvent']);

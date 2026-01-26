@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
+use App\Models\Attribute;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -38,6 +39,26 @@ class OrganizationController extends Controller
             ->get(['id', 'name', 'icon']);
 
         return response()->json(['success' => true, 'categories' => $categories]);
+    }
+
+    public function attributes(Request $request)
+    {
+        $query = Attribute::query()->with(['values' => fn ($q) => $q->orderBy('id')]);
+
+        if ($request->query('search')) {
+            $term = $request->query('search');
+            $query->where('name', 'like', "%{$term}%");
+        }
+
+        $attributes = $query
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'attributes' => $attributes,
+        ]);
     }
 
     public function listEvents(Request $request)
@@ -173,6 +194,10 @@ class OrganizationController extends Controller
             'cover' => ['nullable', 'string', 'max:500'],
             'images' => ['nullable'],
             'videos' => ['nullable'],
+            'attributes' => ['nullable', 'array'],
+            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+            'attributes.*.value_ids' => ['nullable', 'array'],
+            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
@@ -183,6 +208,7 @@ class OrganizationController extends Controller
             ...$data,
             'images' => $this->toArrayField($data['images'] ?? []),
             'videos' => $this->toArrayField($data['videos'] ?? []),
+            'attributes' => $this->normalizeOfferAttributes($data['attributes'] ?? []),
             'created_by' => $request->user()->id,
             'organization_id' => $request->user()->id,
         ]);
@@ -212,6 +238,10 @@ class OrganizationController extends Controller
             'cover' => ['nullable', 'string', 'max:500'],
             'images' => ['nullable'],
             'videos' => ['nullable'],
+            'attributes' => ['nullable', 'array'],
+            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+            'attributes.*.value_ids' => ['nullable', 'array'],
+            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
@@ -223,6 +253,9 @@ class OrganizationController extends Controller
         }
         if (array_key_exists('videos', $data)) {
             $data['videos'] = $this->toArrayField($data['videos']);
+        }
+        if (array_key_exists('attributes', $data)) {
+            $data['attributes'] = $this->normalizeOfferAttributes($data['attributes']);
         }
 
         $offer->update($data + ['updated_by' => $request->user()->id]);
@@ -267,5 +300,32 @@ class OrganizationController extends Controller
         }
 
         return [];
+    }
+
+    private function normalizeOfferAttributes($attributes): array
+    {
+        if (!is_array($attributes)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($attributes as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $attributeId = $entry['attribute_id'] ?? $entry['attributeId'] ?? null;
+            if (!$attributeId) {
+                continue;
+            }
+            $valueIds = $entry['value_ids'] ?? $entry['valueIds'] ?? [];
+            $valueIds = is_array($valueIds) ? array_values(array_filter($valueIds, 'is_numeric')) : [];
+
+            $normalized[] = [
+                'attribute_id' => (int) $attributeId,
+                'value_ids' => array_map('intval', $valueIds),
+            ];
+        }
+
+        return $normalized;
     }
 }

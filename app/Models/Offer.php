@@ -25,6 +25,7 @@ class Offer extends Model
         'cover',
         'images',
         'videos',
+        'attributes',
         'category_id',
         'organization_id',
         'event_id',
@@ -39,6 +40,7 @@ class Offer extends Model
         'end_date' => 'datetime',
         'images' => 'array',
         'videos' => 'array',
+        'attributes' => 'array',
         'discount_value' => 'decimal:2',
     ];
 
