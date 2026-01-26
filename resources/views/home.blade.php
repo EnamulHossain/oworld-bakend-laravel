@@ -32,7 +32,7 @@
                         data-reel data-title="{{ $offer->name }}"
                         data-desc="{{ \Illuminate\Support\Str::limit($offer->details ?? 'Exclusive experience crafted for our community.', 120) }}"
                         data-images="{{ htmlspecialchars(json_encode($gallery), ENT_QUOTES, 'UTF-8') }}"
-                        data-cover="{{ $coverImage }}" data-tag="{{ $offer->offer_type ?? 'Offer' }}">
+                        data-cover="{{ $coverImage }}">
                         <div class="relative h-64 overflow-hidden bg-slate-900">
                             @if (!empty($thumb))
                                 <img class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
@@ -41,8 +41,6 @@
                                 <div class="flex h-full items-center justify-center bg-slate-800 text-4xl text-white">🎁
                                 </div>
                             @endif
-                            <span
-                                class="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-900 shadow">{{ $offer->offer_type ?? 'Offer' }}</span>
                         </div>
                     </article>
                 @empty
@@ -234,7 +232,7 @@
                             data-reel data-title="{{ $offer->name }}"
                             data-desc="{{ \Illuminate\Support\Str::limit($offer->details ?? 'Exclusive experience crafted for our community.', 120) }}"
                             data-images="{{ htmlspecialchars(json_encode($gallery), ENT_QUOTES, 'UTF-8') }}"
-                            data-cover="{{ $coverImage }}" data-tag="{{ $offer->offer_type ?? 'Offer' }}">
+                            data-cover="{{ $coverImage }}">
                             <div class="relative h-64 overflow-hidden bg-slate-900">
                                 @if (!empty($thumb))
                                     <img class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
@@ -243,8 +241,6 @@
                                     <div class="flex h-full items-center justify-center bg-slate-800 text-4xl text-white">🎁
                                     </div>
                                 @endif
-                                <span
-                                    class="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-900 shadow">{{ $offer->offer_type ?? 'Offer' }}</span>
                             </div>
                         </article>
                     @empty

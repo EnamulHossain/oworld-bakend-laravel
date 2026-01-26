@@ -95,15 +95,6 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="form-group col-md-6">
-                        <label>Offer type</label>
-                        <select name="offer_type" class="form-control form-control-lg">
-                            <option value="general" {{ $offer->offer_type === 'general' ? 'selected' : '' }}>General</option>
-                            <option value="category" {{ $offer->offer_type === 'category' ? 'selected' : '' }}>Category</option>
-                            <option value="event" {{ $offer->offer_type === 'event' ? 'selected' : '' }}>Event</option>
-                            <option value="special" {{ $offer->offer_type === 'special' ? 'selected' : '' }}>Special</option>
-                        </select>
-                    </div>
                 </div>
 
                 <div class="form-group">

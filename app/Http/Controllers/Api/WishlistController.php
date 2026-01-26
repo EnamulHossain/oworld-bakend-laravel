@@ -161,7 +161,6 @@ class WishlistController extends Controller
             'endDate' => $item->end_date,
             'discount_type' => $item->discount_type,
             'discount_value' => $item->discount_value,
-            'offer_type' => $item->offer_type,
             'image' => $item->cover ?: ($images[0] ?? null),
             'organizationName' => $item->organization?->organization_name,
             'category' => $item->category ? [

@@ -19,7 +19,6 @@ Route::prefix('auth')->group(function () {
 Route::get('public/categories', [PublicController::class, 'categories']);
 Route::get('public/categories/{id}', [PublicController::class, 'categoryDetail']);
 Route::get('public/areas', [PublicController::class, 'areas']);
-Route::get('public/filter-types', [PublicController::class, 'filterTypes']);
 Route::get('public/events', [PublicController::class, 'events']);
 Route::get('public/events/highlights', [PublicController::class, 'eventHighlights']);
 Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);
@@ -72,10 +71,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::delete('settings/{setting}', [AdminController::class, 'deleteSetting']);
     Route::post('settings/upload', [AdminController::class, 'uploadSettingImage']);
 
-    Route::get('filter-types', [AdminController::class, 'listFilterTypes']);
-    Route::post('filter-types', [AdminController::class, 'storeFilterType']);
-    Route::put('filter-types/{filterType}', [AdminController::class, 'updateFilterType']);
-    Route::delete('filter-types/{filterType}', [AdminController::class, 'deleteFilterType']);
 
     Route::get('attributes', [AdminController::class, 'listAttributes']);
     Route::post('attributes', [AdminController::class, 'storeAttribute']);

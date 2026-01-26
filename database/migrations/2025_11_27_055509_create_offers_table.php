@@ -26,13 +26,11 @@ return new class extends Migration
             $table->foreignId('category_id')->nullable()->constrained('categories')->nullOnDelete();
             $table->foreignId('organization_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('event_id')->nullable()->constrained('events')->nullOnDelete();
-            $table->enum('offer_type', ['general', 'category', 'event', 'special'])->default('general');
             $table->enum('status', ['draft', 'active', 'inactive', 'expired'])->default('draft')->index();
             $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
-            $table->index(['offer_type', 'organization_id']);
             $table->index(['start_date', 'end_date']);
         });
     }

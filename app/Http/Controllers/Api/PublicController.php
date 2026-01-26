@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Area;
 use App\Models\Category;
 use App\Models\Event;
-use App\Models\FilterType;
 use App\Models\Offer;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
@@ -39,21 +38,6 @@ class PublicController extends Controller
         ]);
     }
 
-    public function filterTypes(Request $request)
-    {
-        $query = FilterType::query();
-        if ($request->query('type')) {
-            $query->where('type', $request->query('type'));
-        }
-
-        $filterTypes = $query->orderBy('type')->orderBy('name')->get(['id', 'name', 'type']);
-
-        return response()->json([
-            'success' => true,
-            'filterTypes' => $filterTypes,
-        ]);
-    }
-
     public function categoryDetail($id)
     {
         $category = Category::query()
@@ -81,7 +65,6 @@ class PublicController extends Controller
                 'location',
                 'address',
                 'organization_id',
-                'filter_type_id',
             ]);
 
         $offers = Offer::query()
@@ -99,11 +82,9 @@ class PublicController extends Controller
                 'address',
                 'discount_type',
                 'discount_value',
-                'offer_type',
                 'cover',
                 'images',
                 'organization_id',
-                'filter_type_id',
             ]);
 
         $formattedEvents = $events->map(function ($event) {
@@ -131,7 +112,6 @@ class PublicController extends Controller
                 'endDate' => $offer->end_date,
                 'discount_type' => $offer->discount_type,
                 'discount_value' => $offer->discount_value,
-                'offer_type' => $offer->offer_type,
                 'image' => $offer->cover ?: ($images[0] ?? null),
                 'organizationName' => $offer->organization?->organization_name,
                 'type' => 'offer',
@@ -157,7 +137,6 @@ class PublicController extends Controller
             ->with([
                 'organization:id,organization_name',
                 'category:id,name',
-                'filterType:id,name,type',
             ])
             ->where('status', 'published')
             ->orderBy('starting_date')
@@ -166,10 +145,6 @@ class PublicController extends Controller
         if ($categoryId) {
             $query->where('category_id', $categoryId);
         }
-        if ($request->query('filter_type_id')) {
-            $query->where('filter_type_id', $request->query('filter_type_id'));
-        }
-
         $events = $query->limit($limit)->get([
             'id',
             'name',
@@ -181,24 +156,17 @@ class PublicController extends Controller
             'address',
             'organization_id',
             'category_id',
-            'filter_type_id',
         ])->map(function ($event) {
             return [
                 'id' => $event->id,
                 'title' => $event->name,
                 'description' => $event->description,
-            'date' => $event->starting_date,
-            'endDate' => $event->end_date,
-            'location' => $event->location,
-            'address' => $event->address,
-            'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
+                'date' => $event->starting_date,
+                'endDate' => $event->end_date,
+                'location' => $event->location,
+                'address' => $event->address,
+                'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
                 'organizationName' => $event->organization?->organization_name,
-                'filter_type_id' => $event->filter_type_id,
-                'filterType' => $event->filterType ? [
-                    'id' => $event->filterType->id,
-                    'name' => $event->filterType->name,
-                    'type' => $event->filterType->type,
-                ] : null,
                 'category_id' => $event->category_id,
                 'category' => $event->category ? [
                     'id' => $event->category->id,
@@ -236,21 +204,19 @@ class PublicController extends Controller
                 'location',
                 'address',
                 'organization_id',
-                'filter_type_id',
             ])->map(function ($event) {
                 return [
                     'id' => $event->id,
                     'name' => $event->name,
                     'description' => $event->description,
                     'banner' => $event->banner ?? [],
-                'starting_date' => $event->starting_date,
-                'end_date' => $event->end_date,
-                'location' => $event->location,
-                'address' => $event->address,
-                'organizationName' => $event->organization?->organization_name,
-                'filter_type_id' => $event->filter_type_id,
-            ];
-        });
+                    'starting_date' => $event->starting_date,
+                    'end_date' => $event->end_date,
+                    'location' => $event->location,
+                    'address' => $event->address,
+                    'organizationName' => $event->organization?->organization_name,
+                ];
+            });
 
         return response()->json(['success' => true, 'events' => $events]);
     }
@@ -258,7 +224,7 @@ class PublicController extends Controller
     public function eventDetail($id)
     {
         $event = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'filterType:id,name,type'])
+            ->with(['organization:id,organization_name', 'category:id,name'])
             ->where('status', 'published')
             ->find($id);
 
@@ -277,12 +243,6 @@ class PublicController extends Controller
                 'end_date' => $event->end_date,
                 'location' => $event->location,
                 'address' => $event->address,
-                'filter_type_id' => $event->filter_type_id,
-                'filterType' => $event->filterType ? [
-                    'id' => $event->filterType->id,
-                    'name' => $event->filterType->name,
-                    'type' => $event->filterType->type,
-                ] : null,
                 'organization' => $event->organization ? [
                     'organizationName' => $event->organization->organization_name,
                 ] : null,
@@ -305,11 +265,9 @@ class PublicController extends Controller
                 'organization:id,organization_name',
                 'category:id,name',
                 'area:id,name',
-                'filterType:id,name,type',
             ])
             ->where('status', 'active')
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
-            ->when($request->query('filter_type_id'), fn ($q, $filterTypeId) => $q->where('filter_type_id', $filterTypeId))
             ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -326,13 +284,11 @@ class PublicController extends Controller
                 'google_map_url',
                 'discount_type',
                 'discount_value',
-                'offer_type',
                 'cover',
                 'images',
                 'organization_id',
                 'category_id',
                 'area_id',
-                'filter_type_id',
             ])->map(function ($offer) {
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
@@ -348,15 +304,8 @@ class PublicController extends Controller
                     'google_map_url' => $offer->google_map_url,
                     'discount_type' => $offer->discount_type,
                     'discount_value' => $offer->discount_value,
-                    'offer_type' => $offer->offer_type,
                     'image' => $offer->cover ?: ($images[0] ?? null),
                     'organizationName' => $offer->organization?->organization_name,
-                    'filter_type_id' => $offer->filter_type_id,
-                    'filterType' => $offer->filterType ? [
-                        'id' => $offer->filterType->id,
-                        'name' => $offer->filterType->name,
-                        'type' => $offer->filterType->type,
-                    ] : null,
                     'category_id' => $offer->category_id,
                     'area_id' => $offer->area_id,
                     'category' => $offer->category ? [
@@ -397,13 +346,11 @@ class PublicController extends Controller
                 'end_date',
                 'discount_type',
                 'discount_value',
-                'offer_type',
                 'cover',
                 'images',
                 'videos',
                 'thumbnail',
                 'organization_id',
-                'filter_type_id',
             ])->map(function ($offer) {
                 return [
                     'id' => $offer->id,
@@ -413,13 +360,11 @@ class PublicController extends Controller
                     'end_date' => $offer->end_date,
                     'discount_type' => $offer->discount_type,
                     'discount_value' => $offer->discount_value,
-                    'offer_type' => $offer->offer_type,
                     'cover' => $offer->cover,
                     'images' => $offer->images ?? [],
                     'videos' => $offer->videos ?? [],
                     'thumbnail' => $offer->thumbnail,
                     'organizationName' => $offer->organization?->organization_name,
-                    'filter_type_id' => $offer->filter_type_id,
                 ];
             });
 
@@ -429,7 +374,7 @@ class PublicController extends Controller
     public function offerDetail($id)
     {
         $offer = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name', 'filterType:id,name,type'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
             ->where('status', 'active')
             ->find($id);
 
@@ -455,13 +400,6 @@ class PublicController extends Controller
                 'google_map_url' => $offer->google_map_url,
                 'discount_type' => $offer->discount_type,
                 'discount_value' => $offer->discount_value,
-                'offer_type' => $offer->offer_type,
-                'filter_type_id' => $offer->filter_type_id,
-                'filterType' => $offer->filterType ? [
-                    'id' => $offer->filterType->id,
-                    'name' => $offer->filterType->name,
-                    'type' => $offer->filterType->type,
-                ] : null,
                 'cover' => $offer->cover,
                 'images' => $images,
                 'videos' => $videos,

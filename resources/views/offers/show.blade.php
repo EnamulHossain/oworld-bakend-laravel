@@ -26,8 +26,6 @@
                             class="inline-flex items-center gap-2 self-start rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
                             <span
                                 class="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white">{{ $initials }}</span>
-                            <span
-                                class="rounded-full bg-indigo-500 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">{{ $offer->offer_type ?? 'Offer' }}</span>
                         </div>
                         <h1 class="text-3xl font-black sm:text-4xl">{{ $offer->name }}</h1>
                         <p class="max-w-3xl text-sm text-slate-200 sm:text-base">{{ $offer->details }}</p>

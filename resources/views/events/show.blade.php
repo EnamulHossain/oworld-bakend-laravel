@@ -102,7 +102,6 @@
                         @php
                             $org = $offer->organization_name ?? 'Partner';
                             $initials = strtoupper(\Illuminate\Support\Str::substr($org, 0, 2));
-                            $badge = $offer->offer_type ?? 'Offer';
                             $discountType = $offer->discount_type ? strtoupper($offer->discount_type) : 'OFFER';
                             $discountValue = $offer->discount_value ?? '';
                             $discountText = $discountValue !== '' ? $discountType . ' • ' . $discountValue : $discountType;
@@ -118,7 +117,6 @@
                                 <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow">
                                     <span class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white">{{ $initials }}</span>
                                     <span class="h-2 w-2 rounded-full bg-rose-500"></span>
-                                    <span class="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">{{ $badge }}</span>
                                 </div>
                             </div>
                             <div class="flex flex-1 flex-col justify-between gap-3 p-4">

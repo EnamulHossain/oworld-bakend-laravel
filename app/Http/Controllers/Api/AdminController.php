@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Attribute;
 use App\Models\Category;
 use App\Models\Event;
-use App\Models\FilterType;
 use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -249,10 +248,9 @@ class AdminController extends Controller
     public function listEvents(Request $request)
     {
         $query = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name', 'filterType:id,name,type'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
-            ->when($request->query('filter_type_id'), fn ($q, $filterTypeId) => $q->where('filter_type_id', $filterTypeId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -290,7 +288,6 @@ class AdminController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
-            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'event')],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
 
@@ -316,7 +313,6 @@ class AdminController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
-            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'event')],
             'organization_id' => ['nullable', 'exists:users,id'],
         ]);
 
@@ -351,9 +347,8 @@ class AdminController extends Controller
     public function listOffers(Request $request)
     {
         $query = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name', 'filterType:id,name,type'])
+            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
-            ->when($request->query('filter_type_id'), fn ($q, $filterTypeId) => $q->where('filter_type_id', $filterTypeId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -396,26 +391,9 @@ class AdminController extends Controller
             'images' => ['nullable'],
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
-            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'offer')],
             'organization_id' => ['required', 'exists:users,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
-            'offer_type' => [
-                'nullable',
-                Rule::in([
-                    'general',
-                    'category',
-                    'event',
-                    'special',
-                    'bogo',
-                    'discount',
-                    'combo',
-                    'happy_hour',
-                    'lunch_hour',
-                    'late_night',
-                    'complimentary',
-                ]),
-            ],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
@@ -448,26 +426,9 @@ class AdminController extends Controller
             'images' => ['nullable'],
             'videos' => ['nullable'],
             'category_id' => ['nullable', 'exists:categories,id'],
-            'filter_type_id' => ['nullable', Rule::exists('filter_types', 'id')->where('type', 'offer')],
             'organization_id' => ['nullable', 'exists:users,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
-            'offer_type' => [
-                'nullable',
-                Rule::in([
-                    'general',
-                    'category',
-                    'event',
-                    'special',
-                    'bogo',
-                    'discount',
-                    'combo',
-                    'happy_hour',
-                    'lunch_hour',
-                    'late_night',
-                    'complimentary',
-                ]),
-            ],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
@@ -594,58 +555,6 @@ class AdminController extends Controller
             'fileUrl' => '/storage/' . $path,
             'imageUrl' => '/storage/' . $path,
         ], 201);
-    }
-
-    public function listFilterTypes(Request $request)
-    {
-        $query = FilterType::query();
-        if ($request->query('type')) {
-            $query->where('type', $request->query('type'));
-        }
-
-        $filterTypes = $query->orderBy('type')->orderBy('name')->get();
-
-        return response()->json([
-            'success' => true,
-            'filterTypes' => $filterTypes,
-        ]);
-    }
-
-    public function storeFilterType(Request $request)
-    {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:100', Rule::unique('filter_types', 'name')->where('type', $request->input('type'))],
-            'type' => ['required', Rule::in(['event', 'offer'])],
-        ]);
-
-        $filterType = FilterType::create($data);
-
-        return response()->json(['success' => true, 'filterType' => $filterType], 201);
-    }
-
-    public function updateFilterType(Request $request, FilterType $filterType)
-    {
-        $data = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:100',
-                Rule::unique('filter_types', 'name')
-                    ->where('type', $request->input('type'))
-                    ->ignore($filterType->id),
-            ],
-            'type' => ['required', Rule::in(['event', 'offer'])],
-        ]);
-
-        $filterType->update($data);
-
-        return response()->json(['success' => true, 'filterType' => $filterType]);
-    }
-
-    public function deleteFilterType(FilterType $filterType)
-    {
-        $filterType->delete();
-        return response()->json(['success' => true]);
     }
 
     public function listAttributes(Request $request)

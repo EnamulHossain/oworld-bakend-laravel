@@ -44,7 +44,7 @@ class FrontendController extends Controller
                 ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->limit(8)
-            ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+            ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'cover', 'images', 'organization_id'])
         );
 
         $homeSlider = $this->hydrateMediaArray($this->contentSetting('content_home_slider', []));
@@ -72,7 +72,7 @@ class FrontendController extends Controller
                     $query->orderBy('start_date')
                         ->orderByDesc('created_at')
                         ->limit(12)
-                        ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id', 'category_id', 'event_id'])
+                        ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'cover', 'images', 'organization_id', 'category_id', 'event_id'])
                 );
 
                 return [
@@ -128,7 +128,7 @@ class FrontendController extends Controller
                 ->where('category_id', $category->id)
                 ->orderBy('start_date')
                 ->orderByDesc('created_at')
-                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'cover', 'images', 'organization_id'])
         );
 
         return view('categories.show', [
@@ -169,7 +169,7 @@ class FrontendController extends Controller
                 ->orderBy('start_date')
                 ->orderByDesc('created_at')
                 ->limit(12)
-                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'cover', 'images', 'organization_id'])
         );
 
         return view('events.show', [
@@ -187,11 +187,10 @@ class FrontendController extends Controller
             Offer::query()
                 ->with('organization:id,organization_name')
                 ->where('status', 'active')
-                ->where('offer_type', 'special')
                 ->orderByDesc('start_date')
                 ->orderByDesc('created_at')
                 ->limit(6)
-                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+                ->get(['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'cover', 'images', 'organization_id'])
         );
         $offers = $this->formatOffers(
             Offer::query()
@@ -199,7 +198,7 @@ class FrontendController extends Controller
                 ->where('status', 'active')
                 ->orderBy('start_date')
                 ->orderByDesc('created_at')
-                ->paginate(12, ['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'offer_type', 'cover', 'images', 'organization_id'])
+                ->paginate(12, ['id', 'name', 'details', 'start_date', 'end_date', 'discount_type', 'discount_value', 'cover', 'images', 'organization_id'])
         );
 
         return view('offers.index', compact('settings', 'offers', 'specialOffers'));
@@ -274,7 +273,7 @@ class FrontendController extends Controller
             ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->limit(5)
-            ->get(['id', 'name', 'cover', 'images', 'offer_type'])
+            ->get(['id', 'name', 'cover', 'images'])
             ->map(function ($offer) {
                 $image = $offer->cover;
                 if (!$image && is_array($offer->images)) {
@@ -283,7 +282,7 @@ class FrontendController extends Controller
                 return [
                     'id' => $offer->id,
                     'label' => $offer->name,
-                    'meta' => $offer->offer_type,
+                    'meta' => null,
                     'url' => route('offers.show', $offer),
                     'image' => $this->resolveMedia($image),
                 ];

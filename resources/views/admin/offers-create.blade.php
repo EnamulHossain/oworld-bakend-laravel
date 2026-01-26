@@ -94,15 +94,6 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="form-group col-md-6">
-                        <label>Offer type</label>
-                        <select name="offer_type" class="form-control form-control-lg">
-                            <option value="general">General</option>
-                            <option value="category">Category</option>
-                            <option value="event">Event</option>
-                            <option value="special">Special</option>
-                        </select>
-                    </div>
                 </div>
 
                 <div class="form-group">

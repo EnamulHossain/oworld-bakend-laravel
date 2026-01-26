@@ -26,11 +26,9 @@ class Offer extends Model
         'images',
         'videos',
         'category_id',
-        'filter_type_id',
         'organization_id',
         'event_id',
         'area_id',
-        'offer_type',
         'status',
         'created_by',
         'updated_by',
@@ -57,11 +55,6 @@ class Offer extends Model
     public function event()
     {
         return $this->belongsTo(Event::class);
-    }
-
-    public function filterType()
-    {
-        return $this->belongsTo(FilterType::class);
     }
 
     public function area()
