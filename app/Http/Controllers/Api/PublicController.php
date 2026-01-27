@@ -151,6 +151,7 @@ class PublicController extends Controller
             'name',
             'description',
             'banner',
+            'attributes',
             'starting_date',
             'end_date',
             'location',
@@ -169,6 +170,7 @@ class PublicController extends Controller
                 'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
                 'organizationName' => $event->organization?->organization_name,
                 'category_id' => $event->category_id,
+                'attributes' => $event->attributes ?? [],
                 'category' => $event->category ? [
                     'id' => $event->category->id,
                     'name' => $event->category->name,
@@ -196,28 +198,30 @@ class PublicController extends Controller
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get([
-                'id',
-                'name',
-                'description',
-                'banner',
-                'starting_date',
-                'end_date',
-                'location',
-                'address',
-                'organization_id',
-            ])->map(function ($event) {
-                return [
-                    'id' => $event->id,
-                    'name' => $event->name,
-                    'description' => $event->description,
-                    'banner' => $event->banner ?? [],
-                    'starting_date' => $event->starting_date,
-                    'end_date' => $event->end_date,
-                    'location' => $event->location,
-                    'address' => $event->address,
-                    'organizationName' => $event->organization?->organization_name,
-                ];
-            });
+            'id',
+            'name',
+            'description',
+            'banner',
+            'attributes',
+            'starting_date',
+            'end_date',
+            'location',
+            'address',
+            'organization_id',
+        ])->map(function ($event) {
+            return [
+                'id' => $event->id,
+                'name' => $event->name,
+                'description' => $event->description,
+                'banner' => $event->banner ?? [],
+                'attributes' => $event->attributes ?? [],
+                'starting_date' => $event->starting_date,
+                'end_date' => $event->end_date,
+                'location' => $event->location,
+                'address' => $event->address,
+                'organizationName' => $event->organization?->organization_name,
+            ];
+        });
 
         return response()->json(['success' => true, 'events' => $events]);
     }
@@ -240,6 +244,7 @@ class PublicController extends Controller
                 'name' => $event->name,
                 'description' => $event->description,
                 'banner' => $event->banner ?? [],
+                'attributes' => $event->attributes ?? [],
                 'starting_date' => $event->starting_date,
                 'end_date' => $event->end_date,
                 'location' => $event->location,
