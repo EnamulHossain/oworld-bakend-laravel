@@ -13,6 +13,7 @@ class Event extends Model
         'name',
         'description',
         'banner',
+        'attributes',
         'status',
         'starting_date',
         'end_date',
@@ -28,6 +29,7 @@ class Event extends Model
         'starting_date' => 'datetime',
         'end_date' => 'datetime',
         'banner' => 'array',
+        'attributes' => 'array',
     ];
 
     public function category()

@@ -87,6 +87,10 @@ class OrganizationController extends Controller
             'name' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'banner' => ['nullable'],
+            'attributes' => ['nullable', 'array'],
+            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+            'attributes.*.value_ids' => ['nullable', 'array'],
+            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:starting_date'],
@@ -99,6 +103,7 @@ class OrganizationController extends Controller
         $event = Event::create([
             ...$data,
             'banner' => $this->toArrayField($data['banner'] ?? []),
+            'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
             'created_by' => $request->user()->id,
             'organization_id' => $request->user()->id,
         ]);
@@ -116,6 +121,10 @@ class OrganizationController extends Controller
             'name' => ['sometimes', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'banner' => ['nullable'],
+            'attributes' => ['nullable', 'array'],
+            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+            'attributes.*.value_ids' => ['nullable', 'array'],
+            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:starting_date'],
@@ -127,6 +136,9 @@ class OrganizationController extends Controller
 
         if (array_key_exists('banner', $data)) {
             $data['banner'] = $this->toArrayField($data['banner']);
+        }
+        if (array_key_exists('attributes', $data)) {
+            $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
 
         $event->update($data);
@@ -208,7 +220,7 @@ class OrganizationController extends Controller
             ...$data,
             'images' => $this->toArrayField($data['images'] ?? []),
             'videos' => $this->toArrayField($data['videos'] ?? []),
-            'attributes' => $this->normalizeOfferAttributes($data['attributes'] ?? []),
+            'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
             'created_by' => $request->user()->id,
             'organization_id' => $request->user()->id,
         ]);
@@ -255,7 +267,7 @@ class OrganizationController extends Controller
             $data['videos'] = $this->toArrayField($data['videos']);
         }
         if (array_key_exists('attributes', $data)) {
-            $data['attributes'] = $this->normalizeOfferAttributes($data['attributes']);
+            $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
 
         $offer->update($data + ['updated_by' => $request->user()->id]);
@@ -302,7 +314,7 @@ class OrganizationController extends Controller
         return [];
     }
 
-    private function normalizeOfferAttributes($attributes): array
+    private function normalizeAttributes($attributes): array
     {
         if (!is_array($attributes)) {
             return [];
