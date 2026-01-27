@@ -595,6 +595,10 @@ class AdminController extends Controller
             $query->where('name', 'like', "%{$term}%");
         }
 
+        if ($request->query('type')) {
+            $query->where('type', $request->query('type'));
+        }
+
         $attributes = $query
             ->orderBy('name')
             ->orderBy('id')
@@ -610,6 +614,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'type' => ['required', Rule::in(['event', 'offer'])],
             'values' => ['nullable', 'array'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
@@ -618,6 +623,7 @@ class AdminController extends Controller
         return DB::transaction(function () use ($data) {
             $attribute = Attribute::create([
                 'name' => $data['name'],
+                'type' => $data['type'],
             ]);
 
             $values = $this->normalizeAttributeValues($data['values'] ?? []);
@@ -642,6 +648,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
+            'type' => ['sometimes', Rule::in(['event', 'offer'])],
             'values' => ['nullable', 'array'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
@@ -650,6 +657,9 @@ class AdminController extends Controller
         return DB::transaction(function () use ($data, $attribute) {
             if (array_key_exists('name', $data)) {
                 $attribute->name = $data['name'];
+            }
+            if (array_key_exists('type', $data)) {
+                $attribute->type = $data['type'];
             }
             $attribute->save();
 

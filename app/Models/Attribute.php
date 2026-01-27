@@ -11,6 +11,7 @@ class Attribute extends Model
 
     protected $fillable = [
         'name',
+        'type',
     ];
 
     public function values()
