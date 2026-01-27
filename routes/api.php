@@ -25,6 +25,7 @@ Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);
 Route::get('public/offers', [PublicController::class, 'offers']);
 Route::get('public/offers/highlights', [PublicController::class, 'offerHighlights']);
 Route::get('public/offers/{offer}', [PublicController::class, 'offerDetail']);
+Route::get('public/attributes', [PublicController::class, 'attributes']);
 Route::get('public/search', [PublicController::class, 'search']);
 Route::get('public/settings/{key}', [PublicController::class, 'setting']);
 

@@ -7,6 +7,7 @@ use App\Models\Area;
 use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
+use App\Models\Attribute;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 
@@ -286,6 +287,7 @@ class PublicController extends Controller
                 'discount_value',
                 'cover',
                 'images',
+                'attributes',
                 'organization_id',
                 'category_id',
                 'area_id',
@@ -308,6 +310,7 @@ class PublicController extends Controller
                     'organizationName' => $offer->organization?->organization_name,
                     'category_id' => $offer->category_id,
                     'area_id' => $offer->area_id,
+                    'attributes' => $offer->attributes ?? [],
                     'category' => $offer->category ? [
                         'id' => $offer->category->id,
                         'name' => $offer->category->name,
@@ -404,6 +407,7 @@ class PublicController extends Controller
                 'images' => $images,
                 'videos' => $videos,
                 'thumbnail' => $offer->thumbnail,
+                'attributes' => $offer->attributes ?? [],
                 'organization' => $offer->organization ? [
                     'organizationName' => $offer->organization->organization_name,
                 ] : null,
@@ -493,6 +497,26 @@ class PublicController extends Controller
         return response()->json([
             'success' => true,
             'setting' => $setting,
+        ]);
+    }
+
+    public function attributes(Request $request)
+    {
+        $query = Attribute::query()->with(['values' => fn ($q) => $q->orderBy('id')]);
+
+        if ($request->query('search')) {
+            $term = $request->query('search');
+            $query->where('name', 'like', "%{$term}%");
+        }
+
+        $attributes = $query
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'attributes' => $attributes,
         ]);
     }
 }
