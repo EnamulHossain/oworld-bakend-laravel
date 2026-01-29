@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Attribute;
 use App\Models\Category;
+use App\Models\ContentBlock;
 use App\Models\Event;
 use App\Models\Offer;
 use App\Models\SystemSetting;
@@ -579,6 +580,115 @@ class AdminController extends Controller
             'fileUrl' => '/storage/' . $path,
             'imageUrl' => '/storage/' . $path,
         ], 201);
+    }
+
+    public function listContentBlocks()
+    {
+        $blocks = ContentBlock::query()
+            ->withCount('items')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'blocks' => $blocks,
+        ]);
+    }
+
+    public function showContentBlock(ContentBlock $contentBlock)
+    {
+        $contentBlock->load('items');
+
+        return response()->json([
+            'success' => true,
+            'block' => $contentBlock,
+        ]);
+    }
+
+    public function storeContentBlock(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer'],
+        ]);
+
+        $block = ContentBlock::create($data + [
+            'created_by' => $request->user()->id,
+        ]);
+
+        return response()->json(['success' => true, 'block' => $block], 201);
+    }
+
+    public function updateContentBlock(Request $request, ContentBlock $contentBlock)
+    {
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer'],
+        ]);
+
+        $contentBlock->update($data + [
+            'updated_by' => $request->user()->id,
+        ]);
+
+        return response()->json(['success' => true, 'block' => $contentBlock]);
+    }
+
+    public function updateContentBlockItems(Request $request, ContentBlock $contentBlock)
+    {
+        $data = $request->validate([
+            'items' => ['nullable', 'array', 'max:10'],
+            'items.*.type' => ['required', Rule::in(['category', 'event', 'offer'])],
+            'items.*.target_id' => ['nullable', 'integer'],
+            'items.*.title' => ['nullable', 'string', 'max:200'],
+            'items.*.subtitle' => ['nullable', 'string', 'max:255'],
+            'items.*.image' => ['nullable', 'string', 'max:500'],
+            'items.*.external_link' => ['nullable', 'string', 'max:500'],
+            'items.*.sort_order' => ['nullable', 'integer'],
+        ]);
+
+        $items = $data['items'] ?? [];
+
+        DB::transaction(function () use ($contentBlock, $items) {
+            $contentBlock->items()->delete();
+
+            if (count($items) === 0) {
+                return;
+            }
+
+            $payload = [];
+            foreach ($items as $index => $item) {
+                $payload[] = [
+                    'type' => $item['type'],
+                    'target_id' => $item['target_id'] ?? null,
+                    'title' => $item['title'] ?? null,
+                    'subtitle' => $item['subtitle'] ?? null,
+                    'image' => $item['image'] ?? null,
+                    'external_link' => $item['external_link'] ?? null,
+                    'sort_order' => $item['sort_order'] ?? $index,
+                ];
+            }
+
+            $contentBlock->items()->createMany($payload);
+        });
+
+        $contentBlock->update(['updated_by' => $request->user()->id]);
+        $contentBlock->load('items');
+
+        return response()->json([
+            'success' => true,
+            'block' => $contentBlock,
+        ]);
+    }
+
+    public function deleteContentBlock(ContentBlock $contentBlock)
+    {
+        $contentBlock->delete();
+        return response()->json(['success' => true]);
     }
 
     public function listAttributes(Request $request)

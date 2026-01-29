@@ -25,6 +25,7 @@ Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);
 Route::get('public/offers', [PublicController::class, 'offers']);
 Route::get('public/offers/highlights', [PublicController::class, 'offerHighlights']);
 Route::get('public/offers/{offer}', [PublicController::class, 'offerDetail']);
+Route::get('public/content-blocks', [PublicController::class, 'contentBlocks']);
 Route::get('public/attributes', [PublicController::class, 'attributes']);
 Route::get('public/search', [PublicController::class, 'search']);
 Route::get('public/settings/{key}', [PublicController::class, 'setting']);
@@ -72,6 +73,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::delete('settings/{setting}', [AdminController::class, 'deleteSetting']);
     Route::post('settings/upload', [AdminController::class, 'uploadSettingImage']);
 
+    Route::get('content-blocks', [AdminController::class, 'listContentBlocks']);
+    Route::get('content-blocks/{contentBlock}', [AdminController::class, 'showContentBlock']);
+    Route::post('content-blocks', [AdminController::class, 'storeContentBlock']);
+    Route::put('content-blocks/{contentBlock}', [AdminController::class, 'updateContentBlock']);
+    Route::put('content-blocks/{contentBlock}/items', [AdminController::class, 'updateContentBlockItems']);
+    Route::delete('content-blocks/{contentBlock}', [AdminController::class, 'deleteContentBlock']);
 
     Route::get('attributes', [AdminController::class, 'listAttributes']);
     Route::post('attributes', [AdminController::class, 'storeAttribute']);

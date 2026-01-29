@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Area;
 use App\Models\Category;
+use App\Models\ContentBlock;
 use App\Models\Event;
 use App\Models\Offer;
 use App\Models\Attribute;
@@ -333,6 +334,40 @@ class PublicController extends Controller
             'filters' => [
                 'category_id' => $categoryId,
             ],
+        ]);
+    }
+
+    public function contentBlocks()
+    {
+        $blocks = ContentBlock::query()
+            ->with(['items' => fn ($q) => $q->orderBy('sort_order')->orderBy('id')])
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        $formatted = $blocks->map(function (ContentBlock $block) {
+            return [
+                'id' => $block->id,
+                'name' => $block->name,
+                'description' => $block->description,
+                'items' => $block->items->take(10)->map(fn ($item) => [
+                    'id' => $item->id,
+                    'type' => $item->type,
+                    'targetId' => $item->target_id,
+                    'target_id' => $item->target_id,
+                    'title' => $item->title,
+                    'subtitle' => $item->subtitle,
+                    'image' => $item->image,
+                    'external_link' => $item->external_link,
+                    'sort_order' => $item->sort_order,
+                ]),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'blocks' => $formatted,
         ]);
     }
 
