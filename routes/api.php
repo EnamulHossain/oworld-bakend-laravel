@@ -25,6 +25,7 @@ Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);
 Route::get('public/offers', [PublicController::class, 'offers']);
 Route::get('public/offers/highlights', [PublicController::class, 'offerHighlights']);
 Route::get('public/offers/{offer}', [PublicController::class, 'offerDetail']);
+Route::get('public/highlights', [PublicController::class, 'highlights']);
 Route::get('public/content-blocks', [PublicController::class, 'contentBlocks']);
 Route::get('public/attributes', [PublicController::class, 'attributes']);
 Route::get('public/search', [PublicController::class, 'search']);
@@ -66,6 +67,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::put('offers/{offer}', [AdminController::class, 'updateOffer']);
     Route::delete('offers/{offer}', [AdminController::class, 'deleteOffer']);
     Route::post('offers/upload-media', [AdminController::class, 'uploadOfferMedia']);
+
+    Route::get('highlights', [AdminController::class, 'listHighlights']);
+    Route::post('highlights', [AdminController::class, 'storeHighlight']);
+    Route::put('highlights/{highlight}', [AdminController::class, 'updateHighlight']);
+    Route::delete('highlights/{highlight}', [AdminController::class, 'deleteHighlight']);
+    Route::post('highlights/upload', [AdminController::class, 'uploadHighlightMedia']);
 
     Route::get('settings', [AdminController::class, 'listSettings']);
     Route::post('settings', [AdminController::class, 'storeSetting']);
