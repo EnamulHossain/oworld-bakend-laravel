@@ -47,4 +47,14 @@ class HighlightReel extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+
+    public function reactions()
+    {
+        return $this->hasMany(HighlightReelReaction::class, 'highlight_reel_id');
+    }
+
+    public function shares()
+    {
+        return $this->hasMany(HighlightReelShare::class, 'highlight_reel_id');
+    }
 }

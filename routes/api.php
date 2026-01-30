@@ -30,6 +30,7 @@ Route::get('public/content-blocks', [PublicController::class, 'contentBlocks']);
 Route::get('public/attributes', [PublicController::class, 'attributes']);
 Route::get('public/search', [PublicController::class, 'search']);
 Route::get('public/settings/{key}', [PublicController::class, 'setting']);
+Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHighlight']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('profile', [UserProfileController::class, 'show']);
@@ -39,6 +40,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('wishlist', [WishlistController::class, 'index']);
     Route::post('wishlist', [WishlistController::class, 'store']);
     Route::delete('wishlist', [WishlistController::class, 'destroy']);
+
+    Route::get('highlights/reactions', [PublicController::class, 'highlightReactions']);
+    Route::post('highlights/{highlight}/react', [PublicController::class, 'reactToHighlight']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {

@@ -8,10 +8,13 @@ use App\Models\Category;
 use App\Models\ContentBlock;
 use App\Models\Event;
 use App\Models\HighlightReel;
+use App\Models\HighlightReelReaction;
+use App\Models\HighlightReelShare;
 use App\Models\Offer;
 use App\Models\Attribute;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PublicController extends Controller
 {
@@ -432,6 +435,25 @@ class PublicController extends Controller
             ->limit($limit)
             ->get();
 
+        $highlightIds = $highlights->pluck('id')->all();
+        $reactionCounts = HighlightReelReaction::query()
+            ->whereIn('highlight_reel_id', $highlightIds)
+            ->select('highlight_reel_id', 'reaction', DB::raw('COUNT(*) as total'))
+            ->groupBy('highlight_reel_id', 'reaction')
+            ->get()
+            ->groupBy('highlight_reel_id')
+            ->map(function ($rows) {
+                return $rows->mapWithKeys(function ($row) {
+                    return [$row->reaction => (int)$row->total];
+                });
+            });
+
+        $shareCounts = HighlightReelShare::query()
+            ->whereIn('highlight_reel_id', $highlightIds)
+            ->select('highlight_reel_id', DB::raw('COUNT(*) as total'))
+            ->groupBy('highlight_reel_id')
+            ->pluck('total', 'highlight_reel_id');
+
         $formatted = $highlights->map(function ($highlight) {
             $offer = $highlight->offer;
             $event = $highlight->event;
@@ -494,9 +516,89 @@ class PublicController extends Controller
                 'subtitle' => $subtitle,
                 'sort_order' => $highlight->sort_order,
             ];
+        })->map(function ($item) use ($reactionCounts, $shareCounts) {
+            $item['reactions'] = $reactionCounts[$item['id']] ?? [];
+            $item['share_count'] = (int)($shareCounts[$item['id']] ?? 0);
+            return $item;
         });
 
         return response()->json(['success' => true, 'highlights' => $formatted]);
+    }
+
+    public function highlightReactions(Request $request)
+    {
+        $user = $request->user();
+        $reactions = HighlightReelReaction::query()
+            ->where('user_id', $user->id)
+            ->get(['highlight_reel_id', 'reaction'])
+            ->mapWithKeys(function ($reaction) {
+                return [$reaction->highlight_reel_id => $reaction->reaction];
+            });
+
+        return response()->json(['success' => true, 'reactions' => $reactions]);
+    }
+
+    public function reactToHighlight(Request $request, HighlightReel $highlight)
+    {
+        $data = $request->validate([
+            'reaction' => ['required', 'string', 'max:20'],
+        ]);
+
+        $reaction = strtolower(trim($data['reaction']));
+        $allowed = ['like', 'love', 'care', 'wow', 'sad', 'angry'];
+        if (!in_array($reaction, $allowed, true)) {
+            return response()->json(['error' => 'Invalid reaction.'], 422);
+        }
+
+        $existing = HighlightReelReaction::query()
+            ->where('highlight_reel_id', $highlight->id)
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        if ($existing && $existing->reaction === $reaction) {
+            $existing->delete();
+            $userReaction = null;
+        } else {
+            HighlightReelReaction::updateOrCreate(
+                ['highlight_reel_id' => $highlight->id, 'user_id' => $request->user()->id],
+                ['reaction' => $reaction]
+            );
+            $userReaction = $reaction;
+        }
+
+        $counts = HighlightReelReaction::query()
+            ->where('highlight_reel_id', $highlight->id)
+            ->select('reaction', DB::raw('COUNT(*) as total'))
+            ->groupBy('reaction')
+            ->get()
+            ->mapWithKeys(function ($row) {
+                return [$row->reaction => (int)$row->total];
+            });
+
+        return response()->json([
+            'success' => true,
+            'reactions' => $counts,
+            'user_reaction' => $userReaction,
+        ]);
+    }
+
+    public function shareHighlight(Request $request, HighlightReel $highlight)
+    {
+        $data = $request->validate([
+            'channel' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        HighlightReelShare::create([
+            'highlight_reel_id' => $highlight->id,
+            'user_id' => $request->user()?->id,
+            'channel' => $data['channel'] ?? null,
+        ]);
+
+        $shareCount = HighlightReelShare::query()
+            ->where('highlight_reel_id', $highlight->id)
+            ->count();
+
+        return response()->json(['success' => true, 'share_count' => $shareCount]);
     }
 
     public function offerDetail($id)
