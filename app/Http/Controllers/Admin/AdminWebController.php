@@ -198,6 +198,7 @@ class AdminWebController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'expired'])],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
         ]);
 
         $images = [];
@@ -244,6 +245,7 @@ class AdminWebController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'expired'])],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
         ]);
 
         $images = $offer->images ?? [];

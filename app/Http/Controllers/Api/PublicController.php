@@ -95,6 +95,7 @@ class PublicController extends Controller
                 'images',
                 'organization_id',
                 'sort_order',
+                'offer_type',
             ]);
 
         $formattedEvents = $events->map(function ($event) {
@@ -128,6 +129,7 @@ class PublicController extends Controller
                 'organizationName' => $offer->organization?->organization_name,
                 'sort_order' => $offer->sort_order ?? 0,
                 'serial' => $offer->sort_order ?? 0,
+                'offer_type' => $offer->offer_type ?? 'regular',
                 'type' => 'offer',
             ];
         });
@@ -321,6 +323,7 @@ class PublicController extends Controller
                 'category_id',
                 'area_id',
                 'sort_order',
+                'offer_type',
             ])->map(function ($offer) {
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
@@ -343,6 +346,7 @@ class PublicController extends Controller
                     'attributes' => $offer->attributes ?? [],
                     'sort_order' => $offer->sort_order ?? 0,
                     'serial' => $offer->sort_order ?? 0,
+                    'offer_type' => $offer->offer_type ?? 'regular',
                     'category' => $offer->category ? [
                         'id' => $offer->category->id,
                         'name' => $offer->category->name,
@@ -422,6 +426,7 @@ class PublicController extends Controller
                 'thumbnail',
                 'organization_id',
                 'sort_order',
+                'offer_type',
             ])->map(function ($offer) {
                 return [
                     'id' => $offer->id,
@@ -438,6 +443,7 @@ class PublicController extends Controller
                     'organizationName' => $offer->organization?->organization_name,
                     'sort_order' => $offer->sort_order ?? 0,
                     'serial' => $offer->sort_order ?? 0,
+                    'offer_type' => $offer->offer_type ?? 'regular',
                 ];
             });
 
@@ -663,6 +669,7 @@ class PublicController extends Controller
                 'attributes' => $offer->attributes ?? [],
                 'sort_order' => $offer->sort_order ?? 0,
                 'serial' => $offer->sort_order ?? 0,
+                'offer_type' => $offer->offer_type ?? 'regular',
                 'organization' => $offer->organization ? [
                     'organizationName' => $offer->organization->organization_name,
                 ] : null,

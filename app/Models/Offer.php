@@ -30,6 +30,7 @@ class Offer extends Model
         'organization_id',
         'event_id',
         'area_id',
+        'offer_type',
         'sort_order',
         'status',
         'created_by',

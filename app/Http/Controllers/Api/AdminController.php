@@ -429,6 +429,7 @@ class AdminController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'serial' => ['nullable', 'integer', 'min:0'],
+            'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
         ]);
 
         if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -475,6 +476,7 @@ class AdminController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'serial' => ['nullable', 'integer', 'min:0'],
+            'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
         ]);
 
         if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
