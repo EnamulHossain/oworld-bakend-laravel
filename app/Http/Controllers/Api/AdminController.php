@@ -261,6 +261,7 @@ class AdminController extends Controller
                 });
             })
             ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
+            ->orderBy('sort_order')
             ->orderByDesc('created_at');
 
         $events = $query->paginate((int)$request->query('limit', 15));
@@ -295,7 +296,13 @@ class AdminController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'serial' => ['nullable', 'integer', 'min:0'],
         ]);
+
+        if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
+            $data['sort_order'] = $data['serial'];
+        }
 
         $event = Event::create([
             ...$data,
@@ -325,7 +332,13 @@ class AdminController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'serial' => ['nullable', 'integer', 'min:0'],
         ]);
+
+        if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
+            $data['sort_order'] = $data['serial'];
+        }
 
         if (array_key_exists('banner', $data)) {
             $data['banner'] = $this->toArrayField($data['banner']);
@@ -370,6 +383,7 @@ class AdminController extends Controller
                 });
             })
             ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
+            ->orderBy('sort_order')
             ->orderByDesc('created_at');
 
         $offers = $query->paginate((int)$request->query('limit', 15));
@@ -413,7 +427,13 @@ class AdminController extends Controller
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'serial' => ['nullable', 'integer', 'min:0'],
         ]);
+
+        if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
+            $data['sort_order'] = $data['serial'];
+        }
 
         $offer = Offer::create([
             ...$data,
@@ -453,7 +473,13 @@ class AdminController extends Controller
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'serial' => ['nullable', 'integer', 'min:0'],
         ]);
+
+        if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
+            $data['sort_order'] = $data['serial'];
+        }
 
         if (array_key_exists('images', $data)) {
             $data['images'] = $this->toArrayField($data['images']);
@@ -628,6 +654,11 @@ class AdminController extends Controller
             'metadata' => $this->normalizeJsonField($data['metadata'] ?? null),
         ]);
 
+        if ($setting->key === 'content_home_slider') {
+            $setting->value = $this->normalizeHomeSlider($setting->value);
+            $setting->save();
+        }
+
         return response()->json(['success' => true, 'setting' => $setting], 201);
     }
 
@@ -663,6 +694,11 @@ class AdminController extends Controller
             ]);
         } else {
             $settingModel->update($data + ['updated_by' => $request->user()->id]);
+        }
+
+        if ($settingModel->key === 'content_home_slider') {
+            $settingModel->value = $this->normalizeHomeSlider($settingModel->value);
+            $settingModel->save();
         }
 
         return response()->json(['success' => true, 'setting' => $settingModel]);
@@ -977,6 +1013,35 @@ class AdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function normalizeHomeSlider($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $slides = [];
+        foreach ($value as $idx => $slide) {
+            $slide = is_array($slide) ? $slide : [];
+            if (!array_key_exists('sort_order', $slide)) {
+                if (array_key_exists('serial', $slide)) {
+                    $slide['sort_order'] = (int) $slide['serial'];
+                } elseif (array_key_exists('order', $slide)) {
+                    $slide['sort_order'] = (int) $slide['order'];
+                } else {
+                    $slide['sort_order'] = $idx;
+                }
+            } else {
+                $slide['sort_order'] = (int) $slide['sort_order'];
+            }
+            $slides[] = $slide;
+        }
+
+        return collect($slides)
+            ->sortBy(fn ($slide, $index) => $slide['sort_order'] ?? $index)
+            ->values()
+            ->all();
     }
 
     private function normalizeAttributeValues($values): array

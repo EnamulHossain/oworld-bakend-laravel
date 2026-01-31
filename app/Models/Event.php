@@ -21,6 +21,7 @@ class Event extends Model
         'area_id',
         'address',
         'category_id',
+        'sort_order',
         'created_by',
         'organization_id',
     ];

@@ -108,6 +108,7 @@ class AdminWebController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         Event::create([
@@ -132,6 +133,7 @@ class AdminWebController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $event->update($data);
@@ -195,6 +197,7 @@ class AdminWebController extends Controller
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $images = [];
@@ -240,6 +243,7 @@ class AdminWebController extends Controller
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $images = $offer->images ?? [];
@@ -329,6 +333,29 @@ class AdminWebController extends Controller
 
         $userId = $request->user()->id;
         $slides = $this->normalizeArraySetting($this->decodeJsonOrString($data['home_slider'] ?? ''));
+
+        foreach ($slides as $idx => &$slide) {
+            if (!is_array($slide)) {
+                $slide = [];
+            }
+
+            if (!array_key_exists('sort_order', $slide)) {
+                if (array_key_exists('serial', $slide)) {
+                    $slide['sort_order'] = (int) $slide['serial'];
+                } elseif (array_key_exists('order', $slide)) {
+                    $slide['sort_order'] = (int) $slide['order'];
+                } else {
+                    $slide['sort_order'] = $idx;
+                }
+            } else {
+                $slide['sort_order'] = (int) $slide['sort_order'];
+            }
+        }
+
+        $slides = collect($slides)
+            ->sortBy(fn ($slide, $index) => is_array($slide) ? ($slide['sort_order'] ?? $index) : $index)
+            ->values()
+            ->all();
 
         foreach ($slides as $idx => &$slide) {
             $file = $request->file("slide_image_{$idx}");

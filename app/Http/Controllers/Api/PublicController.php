@@ -59,6 +59,7 @@ class PublicController extends Controller
             ->with('organization:id,organization_name')
             ->where('status', 'published')
             ->where('category_id', $category->id)
+            ->orderBy('sort_order')
             ->orderBy('starting_date')
             ->orderByDesc('created_at')
             ->get([
@@ -71,12 +72,14 @@ class PublicController extends Controller
                 'location',
                 'address',
                 'organization_id',
+                'sort_order',
             ]);
 
         $offers = Offer::query()
             ->with('organization:id,organization_name')
             ->where('status', 'active')
             ->where('category_id', $category->id)
+            ->orderBy('sort_order')
             ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->get([
@@ -91,6 +94,7 @@ class PublicController extends Controller
                 'cover',
                 'images',
                 'organization_id',
+                'sort_order',
             ]);
 
         $formattedEvents = $events->map(function ($event) {
@@ -104,6 +108,8 @@ class PublicController extends Controller
                 'address' => $event->address,
                 'image' => is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner,
                 'organizationName' => $event->organization?->organization_name,
+                'sort_order' => $event->sort_order ?? 0,
+                'serial' => $event->sort_order ?? 0,
                 'type' => 'event',
             ];
         });
@@ -120,6 +126,8 @@ class PublicController extends Controller
                 'discount_value' => $offer->discount_value,
                 'image' => $offer->cover ?: ($images[0] ?? null),
                 'organizationName' => $offer->organization?->organization_name,
+                'sort_order' => $offer->sort_order ?? 0,
+                'serial' => $offer->sort_order ?? 0,
                 'type' => 'offer',
             ];
         });
@@ -145,6 +153,7 @@ class PublicController extends Controller
                 'category:id,name',
             ])
             ->where('status', 'published')
+            ->orderBy('sort_order')
             ->orderBy('starting_date')
             ->orderByDesc('created_at');
 
@@ -163,6 +172,7 @@ class PublicController extends Controller
             'address',
             'organization_id',
             'category_id',
+            'sort_order',
         ])->map(function ($event) {
             return [
                 'id' => $event->id,
@@ -176,6 +186,8 @@ class PublicController extends Controller
                 'organizationName' => $event->organization?->organization_name,
                 'category_id' => $event->category_id,
                 'attributes' => $event->attributes ?? [],
+                'sort_order' => $event->sort_order ?? 0,
+                'serial' => $event->sort_order ?? 0,
                 'category' => $event->category ? [
                     'id' => $event->category->id,
                     'name' => $event->category->name,
@@ -199,6 +211,7 @@ class PublicController extends Controller
         $events = Event::query()
             ->with('organization:id,organization_name')
             ->where('status', 'published')
+            ->orderBy('sort_order')
             ->orderBy('starting_date')
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -213,6 +226,7 @@ class PublicController extends Controller
             'location',
             'address',
             'organization_id',
+            'sort_order',
         ])->map(function ($event) {
             return [
                 'id' => $event->id,
@@ -225,6 +239,8 @@ class PublicController extends Controller
                 'location' => $event->location,
                 'address' => $event->address,
                 'organizationName' => $event->organization?->organization_name,
+                'sort_order' => $event->sort_order ?? 0,
+                'serial' => $event->sort_order ?? 0,
             ];
         });
 
@@ -254,6 +270,8 @@ class PublicController extends Controller
                 'end_date' => $event->end_date,
                 'location' => $event->location,
                 'address' => $event->address,
+                'sort_order' => $event->sort_order ?? 0,
+                'serial' => $event->sort_order ?? 0,
                 'organization' => $event->organization ? [
                     'organizationName' => $event->organization->organization_name,
                 ] : null,
@@ -279,6 +297,7 @@ class PublicController extends Controller
             ])
             ->where('status', 'active')
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
+            ->orderBy('sort_order')
             ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -301,6 +320,7 @@ class PublicController extends Controller
                 'organization_id',
                 'category_id',
                 'area_id',
+                'sort_order',
             ])->map(function ($offer) {
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
@@ -321,6 +341,8 @@ class PublicController extends Controller
                     'category_id' => $offer->category_id,
                     'area_id' => $offer->area_id,
                     'attributes' => $offer->attributes ?? [],
+                    'sort_order' => $offer->sort_order ?? 0,
+                    'serial' => $offer->sort_order ?? 0,
                     'category' => $offer->category ? [
                         'id' => $offer->category->id,
                         'name' => $offer->category->name,
@@ -382,6 +404,7 @@ class PublicController extends Controller
         $offers = Offer::query()
             ->with('organization:id,organization_name')
             ->where('status', 'active')
+            ->orderBy('sort_order')
             ->orderBy('start_date')
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -398,6 +421,7 @@ class PublicController extends Controller
                 'videos',
                 'thumbnail',
                 'organization_id',
+                'sort_order',
             ])->map(function ($offer) {
                 return [
                     'id' => $offer->id,
@@ -412,6 +436,8 @@ class PublicController extends Controller
                     'videos' => $offer->videos ?? [],
                     'thumbnail' => $offer->thumbnail,
                     'organizationName' => $offer->organization?->organization_name,
+                    'sort_order' => $offer->sort_order ?? 0,
+                    'serial' => $offer->sort_order ?? 0,
                 ];
             });
 
@@ -635,6 +661,8 @@ class PublicController extends Controller
                 'videos' => $videos,
                 'thumbnail' => $offer->thumbnail,
                 'attributes' => $offer->attributes ?? [],
+                'sort_order' => $offer->sort_order ?? 0,
+                'serial' => $offer->sort_order ?? 0,
                 'organization' => $offer->organization ? [
                     'organizationName' => $offer->organization->organization_name,
                 ] : null,
@@ -719,6 +747,26 @@ class PublicController extends Controller
         $setting = SystemSetting::where('key', $key)->first();
         if (!$setting || !$setting->is_active) {
             return response()->json(['error' => 'Setting not found'], 404);
+        }
+
+        if ($setting->key === 'content_home_slider' && is_array($setting->value)) {
+            $setting->value = collect($setting->value)
+                ->sortBy(function ($slide, $index) {
+                    if (is_array($slide)) {
+                        if (array_key_exists('sort_order', $slide)) {
+                            return (int) $slide['sort_order'];
+                        }
+                        if (array_key_exists('serial', $slide)) {
+                            return (int) $slide['serial'];
+                        }
+                        if (array_key_exists('order', $slide)) {
+                            return (int) $slide['order'];
+                        }
+                    }
+                    return $index;
+                })
+                ->values()
+                ->all();
         }
 
         return response()->json([
