@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Area;
 use App\Models\Attribute;
 use App\Models\Category;
 use App\Models\ContentBlock;
@@ -193,6 +194,57 @@ class AdminController extends Controller
             ->get();
 
         return response()->json(['success' => true, 'categories' => $categories]);
+    }
+
+    public function listAreas(Request $request)
+    {
+        $areas = Area::query()
+            ->when($request->query('search'), function ($q, $term) {
+                $q->where('name', 'like', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->get();
+
+        return response()->json(['success' => true, 'areas' => $areas]);
+    }
+
+    public function storeArea(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:150', 'unique:areas,name'],
+        ]);
+
+        $name = trim($data['name']);
+        if ($name === '') {
+            return response()->json(['error' => 'Area name is required.'], 422);
+        }
+
+        $area = Area::create(['name' => $name]);
+
+        return response()->json(['success' => true, 'area' => $area], 201);
+    }
+
+    public function updateArea(Request $request, Area $area)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:150', Rule::unique('areas', 'name')->ignore($area->id)],
+        ]);
+
+        $name = trim($data['name']);
+        if ($name === '') {
+            return response()->json(['error' => 'Area name is required.'], 422);
+        }
+
+        $area->update(['name' => $name]);
+
+        return response()->json(['success' => true, 'area' => $area]);
+    }
+
+    public function deleteArea(Area $area)
+    {
+        $area->delete();
+
+        return response()->json(['success' => true]);
     }
 
     public function storeCategory(Request $request)

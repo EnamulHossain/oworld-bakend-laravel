@@ -60,6 +60,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::delete('categories/{category}', [AdminController::class, 'deleteCategory']);
     Route::post('categories/upload-image', [AdminController::class, 'uploadCategoryImage']);
 
+    Route::get('areas', [AdminController::class, 'listAreas']);
+    Route::post('areas', [AdminController::class, 'storeArea']);
+    Route::put('areas/{area}', [AdminController::class, 'updateArea']);
+    Route::delete('areas/{area}', [AdminController::class, 'deleteArea']);
+
     Route::get('events', [AdminController::class, 'listEvents']);
     Route::post('events', [AdminController::class, 'storeEvent']);
     Route::put('events/{event}', [AdminController::class, 'updateEvent']);
