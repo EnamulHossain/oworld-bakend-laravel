@@ -16,6 +16,7 @@ return new class extends Migration
             $table->unsignedBigInteger('offer_id')->nullable();
             $table->unsignedBigInteger('event_id')->nullable();
             $table->unsignedBigInteger('organization_id')->nullable();
+            $table->string('external_link')->nullable();
             $table->integer('sort_order')->default(0);
             $table->boolean('is_active')->default(true);
             $table->unsignedBigInteger('created_by')->nullable();

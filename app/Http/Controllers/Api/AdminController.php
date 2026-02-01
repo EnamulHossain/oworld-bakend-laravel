@@ -609,6 +609,7 @@ class AdminController extends Controller
             'items.*.offer_id' => ['nullable', 'exists:offers,id'],
             'items.*.event_id' => ['nullable', 'exists:events,id'],
             'items.*.organization_id' => ['nullable', 'exists:users,id'],
+            'items.*.external_link' => ['nullable', 'string', 'max:500'],
             'items.*.sort_order' => ['nullable', 'integer'],
             'items.*.is_active' => ['nullable', 'boolean'],
         ]);
@@ -622,6 +623,12 @@ class AdminController extends Controller
         unset($data['items']);
 
         $highlight = DB::transaction(function () use ($data, $items, $request) {
+            $nextOrder = (int)($data['sort_order'] ?? 0);
+            $nextOrder = $nextOrder > 0 ? $nextOrder : ((int)HighlightReel::max('sort_order') + 1);
+            $data['sort_order'] = $nextOrder;
+
+            HighlightReel::where('sort_order', '>=', $nextOrder)->increment('sort_order');
+
             $highlight = HighlightReel::create($data + [
                 'created_by' => $request->user()->id,
                 'updated_by' => $request->user()->id,
@@ -652,6 +659,7 @@ class AdminController extends Controller
             'items.*.offer_id' => ['nullable', 'exists:offers,id'],
             'items.*.event_id' => ['nullable', 'exists:events,id'],
             'items.*.organization_id' => ['nullable', 'exists:users,id'],
+            'items.*.external_link' => ['nullable', 'string', 'max:500'],
             'items.*.sort_order' => ['nullable', 'integer'],
             'items.*.is_active' => ['nullable', 'boolean'],
         ]);
@@ -667,6 +675,25 @@ class AdminController extends Controller
         unset($data['items']);
 
         $highlight = DB::transaction(function () use ($highlight, $data, $itemsProvided, $items, $request) {
+            if (array_key_exists('sort_order', $data)) {
+                $currentOrder = (int)$highlight->sort_order;
+                $nextOrder = (int)$data['sort_order'];
+                $nextOrder = $nextOrder > 0 ? $nextOrder : $currentOrder;
+
+                if ($nextOrder !== $currentOrder) {
+                    if ($nextOrder > $currentOrder) {
+                        HighlightReel::where('id', '!=', $highlight->id)
+                            ->whereBetween('sort_order', [$currentOrder + 1, $nextOrder])
+                            ->decrement('sort_order');
+                    } else {
+                        HighlightReel::where('id', '!=', $highlight->id)
+                            ->whereBetween('sort_order', [$nextOrder, $currentOrder - 1])
+                            ->increment('sort_order');
+                    }
+                    $data['sort_order'] = $nextOrder;
+                }
+            }
+
             $highlight->update($data + ['updated_by' => $request->user()->id]);
 
             if ($itemsProvided) {
@@ -718,6 +745,7 @@ class AdminController extends Controller
                 'offer_id' => $offerId,
                 'event_id' => $eventId,
                 'organization_id' => $organizationId,
+                'external_link' => $item['external_link'] ?? null,
                 'sort_order' => $item['sort_order'] ?? 0,
                 'is_active' => $item['is_active'] ?? true,
                 'created_by' => $userId,

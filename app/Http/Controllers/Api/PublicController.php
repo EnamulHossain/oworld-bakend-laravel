@@ -543,7 +543,7 @@ class PublicController extends Controller
             });
         });
 
-        $formatted = $highlights->map(function ($highlight) {
+        $formatted = $highlights->map(function ($highlight) use ($reactionCounts, $shareCounts) {
             $linkUrl = $highlight->external_link;
             $linkType = $linkUrl ? 'external' : null;
 
@@ -570,6 +570,7 @@ class PublicController extends Controller
                         'offer_id' => $item->offer_id,
                         'event_id' => $item->event_id,
                         'organization_id' => $item->organization_id,
+                        'external_link' => $item->external_link,
                         'sort_order' => $item->sort_order,
                         'reactions' => $itemReactions,
                         'share_count' => $itemShareCount,

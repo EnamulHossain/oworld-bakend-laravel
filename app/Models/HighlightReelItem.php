@@ -18,6 +18,7 @@ class HighlightReelItem extends Model
         'offer_id',
         'event_id',
         'organization_id',
+        'external_link',
         'sort_order',
         'is_active',
         'created_by',
