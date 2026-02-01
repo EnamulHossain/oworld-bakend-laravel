@@ -9,6 +9,7 @@
         href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.6.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/overlayscrollbars/css/OverlayScrollbars.min.css">
+    @stack('styles')
     <style>
         .brand-link { font-weight: 700; }
         .alert-status { margin-bottom: 1rem; }

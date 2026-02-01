@@ -28,6 +28,7 @@
                                 <th>Name</th>
                                 <th>Category</th>
                                 <th>Org</th>
+                                <th>Phone</th>
                                 <th>Status</th>
                                 <th>Valid</th>
                                 <th style="width:150px;">Actions</th>
@@ -39,6 +40,7 @@
                                 <td>{{ $offer->name }}</td>
                                 <td class="text-muted">{{ $offer->category->name ?? '—' }}</td>
                                 <td class="text-muted">{{ $offer->organization->organization_name ?? '—' }}</td>
+                                <td class="text-muted">{{ $offer->phone_number ?? '—' }}</td>
                                 <td><span class="badge badge-info">{{ ucfirst($offer->status ?? 'draft') }}</span></td>
                                 <td class="text-muted">
                                     {{ optional($offer->start_date)->format('M d') }} – {{ optional($offer->end_date)->format('M d, Y') }}
@@ -52,7 +54,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="6" class="text-muted">No offers found.</td></tr>
+                            <tr><td colspan="7" class="text-muted">No offers found.</td></tr>
                         @endforelse
                         </tbody>
                     </table>
