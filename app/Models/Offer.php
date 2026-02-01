@@ -15,6 +15,7 @@ class Offer extends Model
         'start_date',
         'end_date',
         'address',
+        'phone_number',
         'facebook_url',
         'instagram_url',
         'website_url',

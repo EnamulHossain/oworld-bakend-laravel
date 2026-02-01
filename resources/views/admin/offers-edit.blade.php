@@ -34,7 +34,12 @@
 
                 <div class="form-group">
                     <label>Details</label>
-                    <textarea name="details" class="form-control form-control-lg" rows="3">{{ $offer->details }}</textarea>
+                    <textarea name="details" class="form-control form-control-lg js-summernote" rows="3">{{ $offer->details }}</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Phone number</label>
+                    <input name="phone_number" class="form-control form-control-lg" value="{{ $offer->phone_number }}">
                 </div>
 
                 <div class="form-row">
@@ -165,8 +170,24 @@
             </div>
         </form>
     </div>
+@push('styles')
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-lite.min.css">
+@endpush
 @push('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-lite.min.js"></script>
 <script>
+    $(function() {
+        $('.js-summernote').summernote({
+            height: 220,
+            toolbar: [
+                ['style', ['bold', 'italic', 'underline', 'clear']],
+                ['para', ['ul', 'ol', 'paragraph']],
+                ['insert', ['link']],
+                ['view', ['codeview']]
+            ]
+        });
+    });
+
     (function() {
         function setPreview(input, previewId, isImageList = false) {
             const preview = document.getElementById(previewId);
