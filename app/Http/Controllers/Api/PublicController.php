@@ -570,6 +570,7 @@ class PublicController extends Controller
                         'offer_id' => $item->offer_id,
                         'event_id' => $item->event_id,
                         'organization_id' => $item->organization_id,
+                        'image' => $item->image,
                         'external_link' => $item->external_link,
                         'sort_order' => $item->sort_order,
                         'reactions' => $itemReactions,
