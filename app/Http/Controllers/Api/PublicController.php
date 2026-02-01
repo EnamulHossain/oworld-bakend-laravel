@@ -484,29 +484,64 @@ class PublicController extends Controller
 
         $highlights = HighlightReel::query()
             ->where('is_active', true)
+            ->with(['items' => function ($query) {
+                $query->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('id');
+            }])
             ->orderBy('sort_order')
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get();
 
         $highlightIds = $highlights->pluck('id')->all();
-        $reactionCounts = HighlightReelReaction::query()
+        $reactionRows = HighlightReelReaction::query()
             ->whereIn('highlight_reel_id', $highlightIds)
-            ->select('highlight_reel_id', 'reaction', DB::raw('COUNT(*) as total'))
-            ->groupBy('highlight_reel_id', 'reaction')
-            ->get()
-            ->groupBy('highlight_reel_id')
-            ->map(function ($rows) {
-                return $rows->mapWithKeys(function ($row) {
+            ->select(
+                'highlight_reel_id',
+                'reaction',
+                'offer_id',
+                'event_id',
+                'organization_id',
+                DB::raw('COUNT(*) as total')
+            )
+            ->groupBy('highlight_reel_id', 'reaction', 'offer_id', 'event_id', 'organization_id')
+            ->get();
+
+        $reactionCounts = $reactionRows->groupBy('highlight_reel_id')->map(function ($rows) {
+            return $rows->groupBy(function ($row) {
+                $offer = $row->offer_id ?? 0;
+                $event = $row->event_id ?? 0;
+                $org = $row->organization_id ?? 0;
+                return "offer:$offer|event:$event|org:$org";
+            })->map(function ($group) {
+                return $group->mapWithKeys(function ($row) {
                     return [$row->reaction => (int)$row->total];
                 });
             });
+        });
 
-        $shareCounts = HighlightReelShare::query()
+        $shareRows = HighlightReelShare::query()
             ->whereIn('highlight_reel_id', $highlightIds)
-            ->select('highlight_reel_id', DB::raw('COUNT(*) as total'))
-            ->groupBy('highlight_reel_id')
-            ->pluck('total', 'highlight_reel_id');
+            ->select(
+                'highlight_reel_id',
+                'offer_id',
+                'event_id',
+                'organization_id',
+                DB::raw('COUNT(*) as total')
+            )
+            ->groupBy('highlight_reel_id', 'offer_id', 'event_id', 'organization_id')
+            ->get();
+
+        $shareCounts = $shareRows->groupBy('highlight_reel_id')->map(function ($rows) {
+            return $rows->mapWithKeys(function ($row) {
+                $offer = $row->offer_id ?? 0;
+                $event = $row->event_id ?? 0;
+                $org = $row->organization_id ?? 0;
+                $key = "offer:$offer|event:$event|org:$org";
+                return [$key => (int)$row->total];
+            });
+        });
 
         $formatted = $highlights->map(function ($highlight) {
             $linkUrl = $highlight->external_link;
@@ -520,11 +555,27 @@ class PublicController extends Controller
                 'link_url' => $linkUrl,
                 'link_type' => $linkType,
                 'sort_order' => $highlight->sort_order,
+                'items' => $highlight->items->map(function ($item) use ($reactionCounts, $shareCounts) {
+                    $offer = $item->offer_id ?? 0;
+                    $event = $item->event_id ?? 0;
+                    $org = $item->organization_id ?? 0;
+                    $key = "offer:$offer|event:$event|org:$org";
+                    $itemReactions = $reactionCounts[$item->highlight_id][$key] ?? [];
+                    $itemShareCount = (int)($shareCounts[$item->highlight_id][$key] ?? 0);
+
+                    return [
+                        'id' => $item->id,
+                        'title' => $item->title,
+                        'description' => $item->description,
+                        'offer_id' => $item->offer_id,
+                        'event_id' => $item->event_id,
+                        'organization_id' => $item->organization_id,
+                        'sort_order' => $item->sort_order,
+                        'reactions' => $itemReactions,
+                        'share_count' => $itemShareCount,
+                    ];
+                })->values(),
             ];
-        })->map(function ($item) use ($reactionCounts, $shareCounts) {
-            $item['reactions'] = $reactionCounts[$item['id']] ?? [];
-            $item['share_count'] = (int)($shareCounts[$item['id']] ?? 0);
-            return $item;
         });
 
         return response()->json(['success' => true, 'highlights' => $formatted]);
@@ -535,9 +586,19 @@ class PublicController extends Controller
         $user = $request->user();
         $reactions = HighlightReelReaction::query()
             ->where('user_id', $user->id)
-            ->get(['highlight_reel_id', 'reaction'])
-            ->mapWithKeys(function ($reaction) {
-                return [$reaction->highlight_reel_id => $reaction->reaction];
+            ->get(['highlight_reel_id', 'reaction', 'offer_id', 'event_id', 'organization_id'])
+            ->map(function ($reaction) {
+                $offer = $reaction->offer_id ?? 0;
+                $event = $reaction->event_id ?? 0;
+                $org = $reaction->organization_id ?? 0;
+                return [
+                    'highlight_reel_id' => $reaction->highlight_reel_id,
+                    'offer_id' => $reaction->offer_id,
+                    'event_id' => $reaction->event_id,
+                    'organization_id' => $reaction->organization_id,
+                    'reaction' => $reaction->reaction,
+                    'key' => "highlight:{$reaction->highlight_reel_id}|offer:$offer|event:$event|org:$org",
+                ];
             });
 
         return response()->json(['success' => true, 'reactions' => $reactions]);
@@ -547,6 +608,9 @@ class PublicController extends Controller
     {
         $data = $request->validate([
             'reaction' => ['required', 'string', 'max:20'],
+            'offer_id' => ['nullable', 'exists:offers,id'],
+            'event_id' => ['nullable', 'exists:events,id'],
+            'organization_id' => ['nullable', 'exists:users,id'],
         ]);
 
         $reaction = strtolower(trim($data['reaction']));
@@ -555,9 +619,21 @@ class PublicController extends Controller
             return response()->json(['error' => 'Invalid reaction.'], 422);
         }
 
+        $offerId = $data['offer_id'] ?? null;
+        $eventId = $data['event_id'] ?? null;
+        $organizationId = $data['organization_id'] ?? null;
+
+        $targets = array_filter([$offerId, $eventId, $organizationId], fn ($value) => !empty($value));
+        if (count($targets) > 1) {
+            return response()->json(['error' => 'Only one of offer_id, event_id, or organization_id is allowed.'], 422);
+        }
+
         $existing = HighlightReelReaction::query()
             ->where('highlight_reel_id', $highlight->id)
             ->where('user_id', $request->user()->id)
+            ->where('offer_id', $offerId)
+            ->where('event_id', $eventId)
+            ->where('organization_id', $organizationId)
             ->first();
 
         if ($existing && $existing->reaction === $reaction) {
@@ -565,7 +641,13 @@ class PublicController extends Controller
             $userReaction = null;
         } else {
             HighlightReelReaction::updateOrCreate(
-                ['highlight_reel_id' => $highlight->id, 'user_id' => $request->user()->id],
+                [
+                    'highlight_reel_id' => $highlight->id,
+                    'user_id' => $request->user()->id,
+                    'offer_id' => $offerId,
+                    'event_id' => $eventId,
+                    'organization_id' => $organizationId,
+                ],
                 ['reaction' => $reaction]
             );
             $userReaction = $reaction;
@@ -573,6 +655,9 @@ class PublicController extends Controller
 
         $counts = HighlightReelReaction::query()
             ->where('highlight_reel_id', $highlight->id)
+            ->where('offer_id', $offerId)
+            ->where('event_id', $eventId)
+            ->where('organization_id', $organizationId)
             ->select('reaction', DB::raw('COUNT(*) as total'))
             ->groupBy('reaction')
             ->get()
@@ -591,16 +676,34 @@ class PublicController extends Controller
     {
         $data = $request->validate([
             'channel' => ['nullable', 'string', 'max:50'],
+            'offer_id' => ['nullable', 'exists:offers,id'],
+            'event_id' => ['nullable', 'exists:events,id'],
+            'organization_id' => ['nullable', 'exists:users,id'],
         ]);
+
+        $offerId = $data['offer_id'] ?? null;
+        $eventId = $data['event_id'] ?? null;
+        $organizationId = $data['organization_id'] ?? null;
+
+        $targets = array_filter([$offerId, $eventId, $organizationId], fn ($value) => !empty($value));
+        if (count($targets) > 1) {
+            return response()->json(['error' => 'Only one of offer_id, event_id, or organization_id is allowed.'], 422);
+        }
 
         HighlightReelShare::create([
             'highlight_reel_id' => $highlight->id,
+            'offer_id' => $offerId,
+            'event_id' => $eventId,
+            'organization_id' => $organizationId,
             'user_id' => $request->user()?->id,
             'channel' => $data['channel'] ?? null,
         ]);
 
         $shareCount = HighlightReelShare::query()
             ->where('highlight_reel_id', $highlight->id)
+            ->where('offer_id', $offerId)
+            ->where('event_id', $eventId)
+            ->where('organization_id', $organizationId)
             ->count();
 
         return response()->json(['success' => true, 'share_count' => $shareCount]);

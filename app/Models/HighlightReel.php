@@ -42,4 +42,9 @@ class HighlightReel extends Model
     {
         return $this->hasMany(HighlightReelShare::class, 'highlight_reel_id');
     }
+
+    public function items()
+    {
+        return $this->hasMany(HighlightReelItem::class, 'highlight_id');
+    }
 }

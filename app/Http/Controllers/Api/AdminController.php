@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\ContentBlock;
 use App\Models\Event;
 use App\Models\HighlightReel;
+use App\Models\HighlightReelItem;
 use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 class AdminController extends Controller
@@ -580,6 +582,9 @@ class AdminController extends Controller
     public function listHighlights()
     {
         $highlights = HighlightReel::query()
+            ->with(['items' => function ($query) {
+                $query->orderBy('sort_order')->orderBy('id');
+            }])
             ->orderBy('sort_order')
             ->orderByDesc('created_at')
             ->get();
@@ -598,6 +603,14 @@ class AdminController extends Controller
             'external_link' => ['nullable', 'string', 'max:500'],
             'sort_order' => ['nullable', 'integer'],
             'is_active' => ['nullable', 'boolean'],
+            'items' => ['nullable', 'array'],
+            'items.*.title' => ['nullable', 'string', 'max:200'],
+            'items.*.description' => ['nullable', 'string'],
+            'items.*.offer_id' => ['nullable', 'exists:offers,id'],
+            'items.*.event_id' => ['nullable', 'exists:events,id'],
+            'items.*.organization_id' => ['nullable', 'exists:users,id'],
+            'items.*.sort_order' => ['nullable', 'integer'],
+            'items.*.is_active' => ['nullable', 'boolean'],
         ]);
 
         $title = trim((string)($data['title'] ?? ''));
@@ -605,10 +618,22 @@ class AdminController extends Controller
             return response()->json(['error' => 'Title is required for custom highlights.'], 422);
         }
 
-        $highlight = HighlightReel::create($data + [
-            'created_by' => $request->user()->id,
-            'updated_by' => $request->user()->id,
-        ]);
+        $items = $data['items'] ?? [];
+        unset($data['items']);
+
+        $highlight = DB::transaction(function () use ($data, $items, $request) {
+            $highlight = HighlightReel::create($data + [
+                'created_by' => $request->user()->id,
+                'updated_by' => $request->user()->id,
+            ]);
+
+            $itemsData = $this->normalizeHighlightItems($items, $request->user()->id);
+            if (!empty($itemsData)) {
+                $highlight->items()->createMany($itemsData);
+            }
+
+            return $highlight->load('items');
+        });
 
         return response()->json(['success' => true, 'highlight' => $highlight], 201);
     }
@@ -621,6 +646,14 @@ class AdminController extends Controller
             'external_link' => ['nullable', 'string', 'max:500'],
             'sort_order' => ['nullable', 'integer'],
             'is_active' => ['nullable', 'boolean'],
+            'items' => ['nullable', 'array'],
+            'items.*.title' => ['nullable', 'string', 'max:200'],
+            'items.*.description' => ['nullable', 'string'],
+            'items.*.offer_id' => ['nullable', 'exists:offers,id'],
+            'items.*.event_id' => ['nullable', 'exists:events,id'],
+            'items.*.organization_id' => ['nullable', 'exists:users,id'],
+            'items.*.sort_order' => ['nullable', 'integer'],
+            'items.*.is_active' => ['nullable', 'boolean'],
         ]);
 
         $nextTitle = array_key_exists('title', $data) ? trim((string)$data['title']) : $highlight->title;
@@ -629,7 +662,23 @@ class AdminController extends Controller
             return response()->json(['error' => 'Title is required for custom highlights.'], 422);
         }
 
-        $highlight->update($data + ['updated_by' => $request->user()->id]);
+        $itemsProvided = array_key_exists('items', $data);
+        $items = $data['items'] ?? [];
+        unset($data['items']);
+
+        $highlight = DB::transaction(function () use ($highlight, $data, $itemsProvided, $items, $request) {
+            $highlight->update($data + ['updated_by' => $request->user()->id]);
+
+            if ($itemsProvided) {
+                $itemsData = $this->normalizeHighlightItems($items, $request->user()->id);
+                $highlight->items()->delete();
+                if (!empty($itemsData)) {
+                    $highlight->items()->createMany($itemsData);
+                }
+            }
+
+            return $highlight->load('items');
+        });
 
         return response()->json(['success' => true, 'highlight' => $highlight]);
     }
@@ -638,6 +687,45 @@ class AdminController extends Controller
     {
         $highlight->delete();
         return response()->json(['success' => true]);
+    }
+
+    private function normalizeHighlightItems(array $items, int $userId): array
+    {
+        $normalized = [];
+
+        foreach ($items as $index => $item) {
+            $offerId = $item['offer_id'] ?? null;
+            $eventId = $item['event_id'] ?? null;
+            $organizationId = $item['organization_id'] ?? null;
+
+            $links = array_filter([$offerId, $eventId, $organizationId], fn ($value) => !empty($value));
+            if (count($links) > 1) {
+                throw ValidationException::withMessages([
+                    "items.$index" => 'Only one of offer_id, event_id, or organization_id is allowed.',
+                ]);
+            }
+
+            $title = trim((string)($item['title'] ?? ''));
+            if (count($links) === 0 && $title === '') {
+                throw ValidationException::withMessages([
+                    "items.$index.title" => 'Title is required when no offer, event, or organization is selected.',
+                ]);
+            }
+
+            $normalized[] = [
+                'title' => $item['title'] ?? null,
+                'description' => $item['description'] ?? null,
+                'offer_id' => $offerId,
+                'event_id' => $eventId,
+                'organization_id' => $organizationId,
+                'sort_order' => $item['sort_order'] ?? 0,
+                'is_active' => $item['is_active'] ?? true,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ];
+        }
+
+        return $normalized;
     }
 
     public function uploadHighlightMedia(Request $request)

@@ -11,6 +11,9 @@ class HighlightReelShare extends Model
 
     protected $fillable = [
         'highlight_reel_id',
+        'offer_id',
+        'event_id',
+        'organization_id',
         'user_id',
         'channel',
     ];
