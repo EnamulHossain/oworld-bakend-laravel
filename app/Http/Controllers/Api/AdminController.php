@@ -572,12 +572,6 @@ class AdminController extends Controller
     public function listHighlights()
     {
         $highlights = HighlightReel::query()
-            ->with([
-                'offer:id,name,details,cover,images,videos,thumbnail,organization_id',
-                'offer.organization:id,organization_name',
-                'event:id,name,description,banner,organization_id',
-                'event.organization:id,organization_name',
-            ])
             ->orderBy('sort_order')
             ->orderByDesc('created_at')
             ->get();
@@ -592,26 +586,16 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'title' => ['nullable', 'string', 'max:200'],
-            'description' => ['nullable', 'string'],
             'thumbnail' => ['nullable', 'string', 'max:255'],
-            'galleries' => ['nullable'],
             'external_link' => ['nullable', 'string', 'max:500'],
-            'offer_id' => ['nullable', 'exists:offers,id'],
-            'event_id' => ['nullable', 'exists:events,id'],
             'sort_order' => ['nullable', 'integer'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        if (!empty($data['offer_id']) && !empty($data['event_id'])) {
-            return response()->json(['error' => 'Select either an offer or an event, not both.'], 422);
-        }
-
         $title = trim((string)($data['title'] ?? ''));
-        if (empty($data['offer_id']) && empty($data['event_id']) && $title === '') {
+        if ($title === '') {
             return response()->json(['error' => 'Title is required for custom highlights.'], 422);
         }
-
-        $data['galleries'] = $this->toArrayField($data['galleries'] ?? []);
 
         $highlight = HighlightReel::create($data + [
             'created_by' => $request->user()->id,
@@ -625,30 +609,16 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'title' => ['nullable', 'string', 'max:200'],
-            'description' => ['nullable', 'string'],
             'thumbnail' => ['nullable', 'string', 'max:255'],
-            'galleries' => ['nullable'],
             'external_link' => ['nullable', 'string', 'max:500'],
-            'offer_id' => ['nullable', 'exists:offers,id'],
-            'event_id' => ['nullable', 'exists:events,id'],
             'sort_order' => ['nullable', 'integer'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $nextOfferId = array_key_exists('offer_id', $data) ? $data['offer_id'] : $highlight->offer_id;
-        $nextEventId = array_key_exists('event_id', $data) ? $data['event_id'] : $highlight->event_id;
         $nextTitle = array_key_exists('title', $data) ? trim((string)$data['title']) : $highlight->title;
 
-        if (!empty($nextOfferId) && !empty($nextEventId)) {
-            return response()->json(['error' => 'Select either an offer or an event, not both.'], 422);
-        }
-
-        if (empty($nextOfferId) && empty($nextEventId) && trim((string)$nextTitle) === '') {
+        if (trim((string)$nextTitle) === '') {
             return response()->json(['error' => 'Title is required for custom highlights.'], 422);
-        }
-
-        if (array_key_exists('galleries', $data)) {
-            $data['galleries'] = $this->toArrayField($data['galleries']);
         }
 
         $highlight->update($data + ['updated_by' => $request->user()->id]);

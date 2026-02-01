@@ -11,12 +11,8 @@ class HighlightReel extends Model
 
     protected $fillable = [
         'title',
-        'description',
         'thumbnail',
-        'galleries',
         'external_link',
-        'offer_id',
-        'event_id',
         'sort_order',
         'is_active',
         'created_by',
@@ -24,19 +20,8 @@ class HighlightReel extends Model
     ];
 
     protected $casts = [
-        'galleries' => 'array',
         'is_active' => 'boolean',
     ];
-
-    public function offer()
-    {
-        return $this->belongsTo(Offer::class);
-    }
-
-    public function event()
-    {
-        return $this->belongsTo(Event::class);
-    }
 
     public function creator()
     {

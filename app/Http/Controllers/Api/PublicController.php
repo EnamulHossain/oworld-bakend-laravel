@@ -456,12 +456,6 @@ class PublicController extends Controller
 
         $highlights = HighlightReel::query()
             ->where('is_active', true)
-            ->with([
-                'offer:id,name,details,cover,images,videos,thumbnail,organization_id',
-                'offer.organization:id,organization_name',
-                'event:id,name,description,banner,organization_id',
-                'event.organization:id,organization_name',
-            ])
             ->orderBy('sort_order')
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -487,65 +481,16 @@ class PublicController extends Controller
             ->pluck('total', 'highlight_reel_id');
 
         $formatted = $highlights->map(function ($highlight) {
-            $offer = $highlight->offer;
-            $event = $highlight->event;
-            $linkedType = $offer ? 'offer' : ($event ? 'event' : 'custom');
-
-            $media = is_array($highlight->galleries) ? $highlight->galleries : [];
-            if (empty($media)) {
-                if ($offer) {
-                    $media = array_values(array_filter(array_merge(
-                        [$offer->cover],
-                        $offer->images ?? [],
-                        $offer->videos ?? []
-                    )));
-                } elseif ($event) {
-                    $media = is_array($event->banner)
-                        ? array_values(array_filter($event->banner))
-                        : array_values(array_filter([$event->banner]));
-                }
-            }
-
-            $thumbnail = $highlight->thumbnail;
-            if (!$thumbnail) {
-                if ($offer) {
-                    $thumbnail = $offer->thumbnail ?: $offer->cover;
-                } elseif ($event) {
-                    $thumbnail = is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner;
-                }
-            }
-            if (!$thumbnail) {
-                $thumbnail = $media[0] ?? null;
-            }
-
-            $title = $highlight->title ?: ($offer->name ?? ($event->name ?? 'Highlight'));
-            $description = $highlight->description ?: ($offer->details ?? ($event->description ?? null));
-            $subtitle = $offer?->organization?->organization_name
-                ?: $event?->organization?->organization_name;
-
             $linkUrl = $highlight->external_link;
             $linkType = $linkUrl ? 'external' : null;
-            if (!$linkUrl && $offer) {
-                $linkUrl = "/offers/{$offer->id}";
-                $linkType = 'offer';
-            } elseif (!$linkUrl && $event) {
-                $linkUrl = "/events/{$event->id}";
-                $linkType = 'event';
-            }
 
             return [
                 'id' => $highlight->id,
-                'title' => $title,
-                'description' => $description,
-                'thumbnail' => $thumbnail,
-                'media' => $media,
+                'title' => $highlight->title,
+                'thumbnail' => $highlight->thumbnail,
                 'external_link' => $highlight->external_link,
                 'link_url' => $linkUrl,
                 'link_type' => $linkType,
-                'linked_type' => $linkedType,
-                'offer_id' => $offer?->id,
-                'event_id' => $event?->id,
-                'subtitle' => $subtitle,
                 'sort_order' => $highlight->sort_order,
             ];
         })->map(function ($item) use ($reactionCounts, $shareCounts) {
