@@ -92,6 +92,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::get('content-blocks', [AdminController::class, 'listContentBlocks']);
     Route::get('content-blocks/{contentBlock}', [AdminController::class, 'showContentBlock']);
     Route::post('content-blocks', [AdminController::class, 'storeContentBlock']);
+    Route::post('content-blocks/upload-thumbnail', [AdminController::class, 'uploadContentBlockThumbnail']);
     Route::put('content-blocks/{contentBlock}', [AdminController::class, 'updateContentBlock']);
     Route::put('content-blocks/{contentBlock}/items', [AdminController::class, 'updateContentBlockItems']);
     Route::delete('content-blocks/{contentBlock}', [AdminController::class, 'deleteContentBlock']);

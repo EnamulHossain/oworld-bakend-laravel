@@ -13,6 +13,9 @@ class ContentBlock extends Model
         'name',
         'description',
         'is_active',
+        'is_featured',
+        'thumbnail_image',
+        'featured_sort_order',
         'sort_order',
         'created_by',
         'updated_by',
@@ -20,6 +23,8 @@ class ContentBlock extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_featured' => 'boolean',
+        'featured_sort_order' => 'integer',
         'sort_order' => 'integer',
     ];
 

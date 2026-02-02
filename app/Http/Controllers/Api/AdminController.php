@@ -879,6 +879,22 @@ class AdminController extends Controller
         ], 201);
     }
 
+    public function uploadContentBlockThumbnail(Request $request)
+    {
+        $field = $request->hasFile('thumbnail') ? 'thumbnail' : 'image';
+
+        $request->validate([
+            $field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file($field)->store('uploads/content-blocks', 'public');
+        return response()->json([
+            'success' => true,
+            'fileUrl' => '/storage/' . $path,
+            'imageUrl' => '/storage/' . $path,
+        ], 201);
+    }
+
     public function listContentBlocks()
     {
         $blocks = ContentBlock::query()
@@ -909,12 +925,46 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
+            'is_featured' => ['nullable', 'boolean'],
+            'thumbnail_image' => ['required', 'string', 'max:255'],
+            'featured_sort_order' => ['nullable', 'integer'],
             'sort_order' => ['nullable', 'integer'],
         ]);
 
-        $block = ContentBlock::create($data + [
-            'created_by' => $request->user()->id,
-        ]);
+        if (!empty($data['is_featured'])) {
+            if (empty($data['featured_sort_order'])) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Featured sort order is required for featured blocks.',
+                ], 422);
+            }
+            $featuredCount = ContentBlock::where('is_featured', true)->count();
+            if ($featuredCount >= 6) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'You can only have up to 6 featured blocks.',
+                ], 422);
+            }
+        } else {
+            $data['featured_sort_order'] = null;
+        }
+
+        $block = DB::transaction(function () use ($data, $request) {
+            $maxOrder = (int) ContentBlock::max('sort_order');
+            $requestedOrder = (int) ($data['sort_order'] ?? 0);
+            if ($requestedOrder < 1) {
+                $requestedOrder = $maxOrder + 1;
+            } elseif ($requestedOrder > $maxOrder + 1) {
+                $requestedOrder = $maxOrder + 1;
+            }
+
+            ContentBlock::where('sort_order', '>=', $requestedOrder)->increment('sort_order');
+
+            return ContentBlock::create($data + [
+                'sort_order' => $requestedOrder,
+                'created_by' => $request->user()->id,
+            ]);
+        });
 
         return response()->json(['success' => true, 'block' => $block], 201);
     }
@@ -925,12 +975,64 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
+            'is_featured' => ['nullable', 'boolean'],
+            'thumbnail_image' => ['nullable', 'string', 'max:255'],
+            'featured_sort_order' => ['nullable', 'integer'],
             'sort_order' => ['nullable', 'integer'],
         ]);
 
-        $contentBlock->update($data + [
-            'updated_by' => $request->user()->id,
-        ]);
+        if (array_key_exists('is_featured', $data) && $data['is_featured'] && !$contentBlock->is_featured) {
+            if (empty($data['featured_sort_order'])) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Featured sort order is required for featured blocks.',
+                ], 422);
+            }
+            $featuredCount = ContentBlock::where('is_featured', true)->count();
+            if ($featuredCount >= 6) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'You can only have up to 6 featured blocks.',
+                ], 422);
+            }
+        }
+
+        $contentBlock = DB::transaction(function () use ($contentBlock, $data, $request) {
+            $payload = $data + ['updated_by' => $request->user()->id];
+
+            if (array_key_exists('is_featured', $data) && !$data['is_featured']) {
+                $payload['featured_sort_order'] = null;
+            }
+
+            if (array_key_exists('sort_order', $data)) {
+                $currentOrder = (int) ($contentBlock->sort_order ?? 0);
+                $maxOrder = (int) ContentBlock::where('id', '!=', $contentBlock->id)->max('sort_order');
+                $targetOrder = (int) ($data['sort_order'] ?? 0);
+
+                if ($targetOrder < 1) {
+                    $targetOrder = 1;
+                } elseif ($targetOrder > $maxOrder + 1) {
+                    $targetOrder = $maxOrder + 1;
+                }
+
+                if ($targetOrder !== $currentOrder) {
+                    if ($targetOrder < $currentOrder) {
+                        ContentBlock::where('id', '!=', $contentBlock->id)
+                            ->whereBetween('sort_order', [$targetOrder, $currentOrder - 1])
+                            ->increment('sort_order');
+                    } else {
+                        ContentBlock::where('id', '!=', $contentBlock->id)
+                            ->whereBetween('sort_order', [$currentOrder + 1, $targetOrder])
+                            ->decrement('sort_order');
+                    }
+                }
+
+                $payload['sort_order'] = $targetOrder;
+            }
+
+            $contentBlock->update($payload);
+            return $contentBlock;
+        });
 
         return response()->json(['success' => true, 'block' => $contentBlock]);
     }
