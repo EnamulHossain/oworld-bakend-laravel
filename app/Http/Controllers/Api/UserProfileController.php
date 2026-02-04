@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class UserProfileController extends Controller
 {
@@ -70,5 +72,24 @@ class UserProfileController extends Controller
             'message' => 'Avatar updated successfully.',
             'user' => $this->formatUser($user),
         ]);
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'confirmed', Password::min(6)],
+        ]);
+
+        if (!Hash::check($data['current_password'], $user->password)) {
+            return response()->json(['error' => 'Current password is incorrect.'], 422);
+        }
+
+        $user->password = Hash::make($data['password']);
+        $user->save();
+
+        return response()->json(['message' => 'Password updated successfully.']);
     }
 }
