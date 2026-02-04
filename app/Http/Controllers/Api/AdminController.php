@@ -499,13 +499,24 @@ class AdminController extends Controller
             $data['sort_order'] = $data['serial'];
         }
 
-        $offer = Offer::create([
-            ...$data,
-            'images' => $this->toArrayField($data['images'] ?? []),
-            'videos' => $this->toArrayField($data['videos'] ?? []),
-            'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-            'created_by' => $request->user()->id,
-        ]);
+        $offer = DB::transaction(function () use ($data, $request) {
+            $requestedOrder = $data['sort_order'] ?? null;
+            $nextOrder = (int) Offer::max('sort_order') + 1;
+            $finalOrder = $requestedOrder === null ? $nextOrder : max(0, (int) $requestedOrder);
+
+            if ($requestedOrder !== null) {
+                Offer::where('sort_order', '>=', $finalOrder)->increment('sort_order');
+            }
+
+            return Offer::create([
+                ...$data,
+                'sort_order' => $finalOrder,
+                'images' => $this->toArrayField($data['images'] ?? []),
+                'videos' => $this->toArrayField($data['videos'] ?? []),
+                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
+                'created_by' => $request->user()->id,
+            ]);
+        });
 
         return response()->json(['success' => true, 'offer' => $offer], 201);
     }
@@ -557,8 +568,29 @@ class AdminController extends Controller
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
 
-        $offer->update($data + ['updated_by' => $request->user()->id]);
-        return response()->json(['success' => true, 'offer' => $offer]);
+        DB::transaction(function () use ($data, $offer, $request) {
+            if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
+                $newOrder = max(0, (int) $data['sort_order']);
+                $currentOrder = (int) $offer->sort_order;
+
+                if ($newOrder !== $currentOrder) {
+                    if ($newOrder < $currentOrder) {
+                        Offer::where('id', '!=', $offer->id)
+                            ->whereBetween('sort_order', [$newOrder, $currentOrder - 1])
+                            ->increment('sort_order');
+                    } else {
+                        Offer::where('id', '!=', $offer->id)
+                            ->whereBetween('sort_order', [$currentOrder + 1, $newOrder])
+                            ->decrement('sort_order');
+                    }
+                }
+
+                $data['sort_order'] = $newOrder;
+            }
+
+            $offer->update($data + ['updated_by' => $request->user()->id]);
+        });
+        return response()->json(['success' => true, 'offer' => $offer->fresh()]);
     }
 
     public function deleteOffer(Offer $offer)
