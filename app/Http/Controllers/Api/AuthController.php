@@ -96,10 +96,10 @@ class AuthController extends Controller
 
         $frontendRedirect = $request->query('redirect', $this->defaultFrontendRedirect());
 
-        $state = base64_encode(json_encode([
+        $state = $this->encodeState([
             'redirect' => $frontendRedirect,
             'role' => $this->sanitizeRole($request->query('role')),
-        ]));
+        ]);
 
         $redirectUrl = Socialite::driver('google')
             ->stateless()
@@ -193,12 +193,42 @@ class AuthController extends Controller
         }
 
         try {
-            $decoded = json_decode(base64_decode($state), true, 512, JSON_THROW_ON_ERROR);
+            $normalized = $this->normalizeBase64Url($state);
+            $decodedState = base64_decode($normalized, true);
+
+            if ($decodedState === false) {
+                return [];
+            }
+
+            $decoded = json_decode($decodedState, true, 512, JSON_THROW_ON_ERROR);
 
             return is_array($decoded) ? $decoded : [];
         } catch (\Throwable $e) {
             return [];
         }
+    }
+
+    private function encodeState(array $payload): string
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+        if ($json === false) {
+            return '';
+        }
+
+        return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
+    }
+
+    private function normalizeBase64Url(string $value): string
+    {
+        $value = strtr($value, '-_', '+/');
+        $padding = strlen($value) % 4;
+
+        if ($padding > 0) {
+            $value .= str_repeat('=', 4 - $padding);
+        }
+
+        return $value;
     }
 
     private function buildRedirectUrl(string $base, array $params = []): string

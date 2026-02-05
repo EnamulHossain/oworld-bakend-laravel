@@ -3,12 +3,15 @@
 return [
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
     'allowed_methods' => ['*'],
-    'allowed_origins' => [
+    'allowed_origins' => array_values(array_unique(array_filter([
+        env('FRONTEND_APP_URL'),
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-         'https://oworldbd.com',
-         'https://oworldbackend.ibrahimaaraf.com',
-    ],
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'https://oworldbd.com',
+        'https://oworldbackend.ibrahimaaraf.com',
+    ]))),
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],
