@@ -49,8 +49,12 @@ class OrganizationController extends Controller
             $term = $request->query('search');
             $query->where('name', 'like', "%{$term}%");
         }
+        if ($request->query('type')) {
+            $query->where('type', $request->query('type'));
+        }
 
         $attributes = $query
+            ->orderBy('sort_order')
             ->orderBy('name')
             ->orderBy('id')
             ->get();

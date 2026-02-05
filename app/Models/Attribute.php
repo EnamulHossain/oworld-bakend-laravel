@@ -12,6 +12,7 @@ class Attribute extends Model
     protected $fillable = [
         'name',
         'type',
+        'sort_order',
     ];
 
     public function values()
