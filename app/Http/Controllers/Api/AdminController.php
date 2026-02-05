@@ -1143,6 +1143,7 @@ class AdminController extends Controller
         }
 
         $attributes = $query
+            ->orderBy('sort_order')
             ->orderBy('name')
             ->orderBy('id')
             ->get();
@@ -1158,6 +1159,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
             'values' => ['nullable', 'array'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
@@ -1167,6 +1169,7 @@ class AdminController extends Controller
             $attribute = Attribute::create([
                 'name' => $data['name'],
                 'type' => $data['type'],
+                'sort_order' => (int) ($data['sort_order'] ?? 0),
             ]);
 
             $values = $this->normalizeAttributeValues($data['values'] ?? []);
@@ -1192,6 +1195,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
             'values' => ['nullable', 'array'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
@@ -1203,6 +1207,9 @@ class AdminController extends Controller
             }
             if (array_key_exists('type', $data)) {
                 $attribute->type = $data['type'];
+            }
+            if (array_key_exists('sort_order', $data)) {
+                $attribute->sort_order = (int) ($data['sort_order'] ?? 0);
             }
             $attribute->save();
 
