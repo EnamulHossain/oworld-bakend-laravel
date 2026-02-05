@@ -412,6 +412,7 @@ class PublicController extends Controller
                 'name' => $block->name,
                 'description' => $block->description,
                 'is_featured' => (bool) $block->is_featured,
+                'teared_block' => (bool) $block->teared_block,
                 'thumbnail_image' => $block->thumbnail_image,
                 'featured_sort_order' => $block->featured_sort_order,
                 'items' => $block->items->take(10)->map(fn ($item) => [
