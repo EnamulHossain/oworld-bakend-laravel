@@ -7,6 +7,7 @@ return [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
          'https://oworldbd.com',
+         'https://www.oworld.ibrahimaaraf.com',
          'https://oworldbackend.ibrahimaaraf.com',
     ],
     'allowed_origins_patterns' => [],
