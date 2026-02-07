@@ -146,6 +146,27 @@
                             No gallery images selected.
                         @endif
                     </div>
+                    @if(!empty($offer->images))
+                        <div class="mt-3" id="existingImagesOrder">
+                            <label class="d-block text-muted small mb-2">Gallery sort order (existing)</label>
+                            @foreach($offer->images as $index => $url)
+                                <div class="d-flex align-items-center mb-2">
+                                    <div class="text-muted small mr-2" style="min-width: 160px;">
+                                        {{ strlen($url) > 36 ? substr($url, 0, 33) . '...' : $url }}
+                                    </div>
+                                    <input
+                                        type="number"
+                                        name="gallery_sort_order_existing[{{ $url }}]"
+                                        class="form-control form-control-sm"
+                                        style="width: 90px;"
+                                        min="1"
+                                        value="{{ (is_array($offer->gallery_sort_order ?? null) && array_key_exists($url, $offer->gallery_sort_order)) ? $offer->gallery_sort_order[$url] : ($index + 1) }}"
+                                    >
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                    <div class="mt-3" id="imagesOrderList"></div>
                 </div>
 
                 <div class="form-group mb-0">
@@ -208,11 +229,38 @@
             preview.innerHTML = items.join(' ');
         }
 
+        function renderImageOrderInputs(input) {
+            const orderList = document.getElementById('imagesOrderList');
+            if (!orderList) return;
+            const files = input.files;
+            if (!files || !files.length) {
+                orderList.innerHTML = '';
+                return;
+            }
+            const rows = Array.from(files).map((file, index) => {
+                const display = file.name.length > 36 ? file.name.slice(0, 33) + '...' : file.name;
+                return `
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="text-muted small mr-2" style="min-width: 160px;">${display}</div>
+                        <input type="number" name="gallery_sort_order_new[]" class="form-control form-control-sm" style="width: 90px;" min="1" value="${index + 1}">
+                    </div>
+                `;
+            });
+            orderList.innerHTML = `
+                <label class="d-block text-muted small mb-2">Gallery sort order (new uploads)</label>
+                ${rows.join('')}
+            `;
+        }
+
         ['thumbnailInput','coverInput','imagesInput','videosInput'].forEach(id => {
             const input = document.getElementById(id);
             if (input) {
                 input.addEventListener('change', () => {
-                    if (id === 'imagesInput') return setPreview(input, 'imagesPreview', true);
+                    if (id === 'imagesInput') {
+                        setPreview(input, 'imagesPreview', true);
+                        renderImageOrderInputs(input);
+                        return;
+                    }
                     setPreview(input, id === 'videosInput' ? 'videosPreview' : (id === 'thumbnailInput' ? 'thumbPreview' : 'coverPreview'));
                 });
             }

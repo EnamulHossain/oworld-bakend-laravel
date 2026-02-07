@@ -99,7 +99,9 @@ class AdminWebController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
-            'banner' => ['nullable', 'string', 'max:500'],
+            'banner_url' => ['nullable', 'string', 'max:500'],
+            'banner_files.*' => ['nullable', 'file', 'mimetypes:image/*,video/*', 'max:20480'],
+            'gallery_sort_order_new' => ['nullable', 'array'],
             'status' => ['required', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after:starting_date'],
@@ -115,8 +117,33 @@ class AdminWebController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
+        $banner = [];
+        if (!empty($data['banner_url'])) {
+            $banner[] = $data['banner_url'];
+        }
+        if ($request->hasFile('banner_files')) {
+            foreach ($request->file('banner_files') as $file) {
+                $banner[] = '/storage/' . $file->store('uploads/events', 'public');
+            }
+        }
+
+        $gallerySortOrder = [];
+        $orders = $request->input('gallery_sort_order_new', []);
+        $orders = is_array($orders) ? $orders : [];
+        $newStartIndex = max(count($banner) - count($orders), 0);
+        foreach ($banner as $index => $url) {
+            $relativeIndex = $index - $newStartIndex;
+            $orderValue = $orders[$relativeIndex] ?? null;
+            $gallerySortOrder[$url] = is_numeric($orderValue) ? (int) $orderValue : ($index + 1);
+        }
+        if (!empty($data['banner_url']) && !isset($gallerySortOrder[$data['banner_url']])) {
+            $gallerySortOrder[$data['banner_url']] = 0;
+        }
+
         Event::create([
             ...$data,
+            'banner' => $banner,
+            'gallery_sort_order' => $gallerySortOrder ?: null,
             'created_by' => $request->user()->id,
         ]);
 
@@ -128,7 +155,10 @@ class AdminWebController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
-            'banner' => ['nullable', 'string', 'max:500'],
+            'banner_url' => ['nullable', 'string', 'max:500'],
+            'banner_files.*' => ['nullable', 'file', 'mimetypes:image/*,video/*', 'max:20480'],
+            'gallery_sort_order_existing' => ['nullable', 'array'],
+            'gallery_sort_order_new' => ['nullable', 'array'],
             'status' => ['required', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after:starting_date'],
@@ -144,7 +174,61 @@ class AdminWebController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $event->update($data);
+        $banner = $event->banner ?? [];
+        if (!is_array($banner)) {
+            $banner = $banner ? [$banner] : [];
+        }
+        if (!empty($data['banner_url']) && !in_array($data['banner_url'], $banner, true)) {
+            $banner[] = $data['banner_url'];
+        }
+        if ($request->hasFile('banner_files')) {
+            foreach ($request->file('banner_files') as $file) {
+                $banner[] = '/storage/' . $file->store('uploads/events', 'public');
+            }
+        }
+
+        $existingOrders = $request->input('gallery_sort_order_existing', []);
+        $existingOrders = is_array($existingOrders) ? $existingOrders : [];
+        $newOrders = $request->input('gallery_sort_order_new', []);
+        $newOrders = is_array($newOrders) ? $newOrders : [];
+
+        $gallerySortOrder = [];
+        foreach ($existingOrders as $url => $orderValue) {
+            if (!is_string($url)) {
+                continue;
+            }
+            $gallerySortOrder[$url] = is_numeric($orderValue) ? (int) $orderValue : 0;
+        }
+
+        $maxOrder = 0;
+        foreach ($gallerySortOrder as $orderValue) {
+            if ($orderValue > $maxOrder) {
+                $maxOrder = $orderValue;
+            }
+        }
+
+        $newStartIndex = max(count($banner) - count($newOrders), 0);
+        foreach ($banner as $index => $url) {
+            if (array_key_exists($url, $gallerySortOrder)) {
+                continue;
+            }
+            $relativeIndex = $index - $newStartIndex;
+            $orderValue = $newOrders[$relativeIndex] ?? null;
+            if (!is_numeric($orderValue)) {
+                $maxOrder += 1;
+                $gallerySortOrder[$url] = $maxOrder;
+            } else {
+                $gallerySortOrder[$url] = (int) $orderValue;
+                if ((int) $orderValue > $maxOrder) {
+                    $maxOrder = (int) $orderValue;
+                }
+            }
+        }
+
+        $event->update($data + [
+            'banner' => $banner,
+            'gallery_sort_order' => $gallerySortOrder ?: null,
+        ]);
 
         return back()->with('status', 'Event updated.');
     }
@@ -200,6 +284,7 @@ class AdminWebController extends Controller
             'thumbnail' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
             'cover' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
             'images.*' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
+            'gallery_sort_order_new' => ['nullable', 'array'],
             'videos.*' => ['nullable', 'file', 'mimes:mp4,webm,mov', 'max:51200'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
@@ -227,6 +312,16 @@ class AdminWebController extends Controller
         $payload['thumbnail'] = $request->hasFile('thumbnail') ? '/storage/' . $request->file('thumbnail')->store('uploads/offers', 'public') : null;
         $payload['cover'] = $request->hasFile('cover') ? '/storage/' . $request->file('cover')->store('uploads/offers', 'public') : null;
         $payload['images'] = $images;
+        if ($images) {
+            $orders = $request->input('gallery_sort_order_new', []);
+            $orders = is_array($orders) ? $orders : [];
+            $gallerySortOrder = [];
+            foreach ($images as $index => $url) {
+                $orderValue = $orders[$index] ?? ($index + 1);
+                $gallerySortOrder[$url] = is_numeric($orderValue) ? (int) $orderValue : ($index + 1);
+            }
+            $payload['gallery_sort_order'] = $gallerySortOrder;
+        }
         $payload['videos'] = $videos;
         $payload['created_by'] = $request->user()->id;
 
@@ -248,6 +343,8 @@ class AdminWebController extends Controller
             'thumbnail' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
             'cover' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
             'images.*' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
+            'gallery_sort_order_existing' => ['nullable', 'array'],
+            'gallery_sort_order_new' => ['nullable', 'array'],
             'videos.*' => ['nullable', 'file', 'mimes:mp4,webm,mov', 'max:51200'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
@@ -278,6 +375,47 @@ class AdminWebController extends Controller
             $data['cover'] = '/storage/' . $request->file('cover')->store('uploads/offers', 'public');
         }
         $data['images'] = $images;
+        $existingOrders = $request->input('gallery_sort_order_existing', []);
+        $existingOrders = is_array($existingOrders) ? $existingOrders : [];
+        $newOrders = $request->input('gallery_sort_order_new', []);
+        $newOrders = is_array($newOrders) ? $newOrders : [];
+        $gallerySortOrder = [];
+
+        foreach ($existingOrders as $url => $orderValue) {
+            if (!is_string($url)) {
+                continue;
+            }
+            $gallerySortOrder[$url] = is_numeric($orderValue) ? (int) $orderValue : 0;
+        }
+
+        $maxOrder = 0;
+        foreach ($gallerySortOrder as $orderValue) {
+            if ($orderValue > $maxOrder) {
+                $maxOrder = $orderValue;
+            }
+        }
+
+        $newStartIndex = max(count($images) - count($newOrders), 0);
+        foreach ($images as $index => $url) {
+            if (array_key_exists($url, $gallerySortOrder)) {
+                continue;
+            }
+            $relativeIndex = $index - $newStartIndex;
+            $orderValue = $newOrders[$relativeIndex] ?? null;
+            if (!is_numeric($orderValue)) {
+                $maxOrder += 1;
+                $gallerySortOrder[$url] = $maxOrder;
+            } else {
+                $gallerySortOrder[$url] = (int) $orderValue;
+                if ((int) $orderValue > $maxOrder) {
+                    $maxOrder = (int) $orderValue;
+                }
+            }
+        }
+
+        if ($gallerySortOrder) {
+            $data['gallery_sort_order'] = $gallerySortOrder;
+        }
         $data['videos'] = $videos;
 
         $offer->update($data + ['updated_by' => $request->user()->id]);

@@ -16,6 +16,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -338,6 +339,8 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'banner' => ['nullable'],
+            'thumbnail' => ['nullable', 'string', 'max:500'],
+            'gallery_sort_order' => ['nullable'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
@@ -362,9 +365,15 @@ class AdminController extends Controller
             $data['sort_order'] = $data['serial'];
         }
 
+        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+        if (!is_array($gallerySortOrder)) {
+            $gallerySortOrder = [];
+        }
+
         $event = Event::create([
             ...$data,
             'banner' => $this->toArrayField($data['banner'] ?? []),
+            'gallery_sort_order' => $gallerySortOrder,
             'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
             'created_by' => $request->user()->id,
         ]);
@@ -378,6 +387,8 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'banner' => ['nullable'],
+            'thumbnail' => ['nullable', 'string', 'max:500'],
+            'gallery_sort_order' => ['nullable'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
@@ -405,6 +416,10 @@ class AdminController extends Controller
         if (array_key_exists('banner', $data)) {
             $data['banner'] = $this->toArrayField($data['banner']);
         }
+        if (array_key_exists('gallery_sort_order', $data)) {
+            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
+            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
+        }
         if (array_key_exists('attributes', $data)) {
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
@@ -430,6 +445,19 @@ class AdminController extends Controller
             'success' => true,
             'bannerUrl' => '/storage/' . $path,
             'mimeType' => $request->file('banner')->getClientMimeType(),
+        ], 201);
+    }
+
+    public function uploadEventThumbnail(Request $request)
+    {
+        $request->validate([
+            'thumbnail' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
+        ]);
+
+        $path = $request->file('thumbnail')->store('uploads/events', 'public');
+        return response()->json([
+            'success' => true,
+            'thumbnailUrl' => '/storage/' . $path,
         ], 201);
     }
 
@@ -464,133 +492,182 @@ class AdminController extends Controller
 
     public function storeOffer(Request $request)
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:200'],
-            'details' => ['nullable', 'string'],
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after:start_date'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:50'],
-            'facebook_url' => ['nullable', 'string', 'max:500'],
-            'instagram_url' => ['nullable', 'string', 'max:500'],
-            'website_url' => ['nullable', 'string', 'max:500'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
-            'discount_value' => ['nullable', 'numeric', 'min:0'],
-            'thumbnail' => ['nullable', 'string', 'max:500'],
-            'cover' => ['nullable', 'string', 'max:500'],
-            'images' => ['nullable'],
-            'videos' => ['nullable'],
-            'attributes' => ['nullable', 'array'],
-            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
-            'attributes.*.value_ids' => ['nullable', 'array'],
-            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'organization_id' => ['required', 'exists:users,id'],
-            'event_id' => ['nullable', 'exists:events,id'],
-            'area_id' => ['nullable', 'exists:areas,id'],
-            'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
-            'sort_order' => ['nullable', 'integer', 'min:0'],
-            'serial' => ['nullable', 'integer', 'min:0'],
-            'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
-        ]);
+        try {
+            Log::info('API storeOffer called', [
+                'user_id' => optional($request->user())->id,
+                'payload' => $request->except(['thumbnail', 'cover', 'images', 'videos']),
+                'has_images' => $request->has('images') || $request->hasFile('images'),
+                'has_videos' => $request->has('videos') || $request->hasFile('videos'),
+            ]);
 
-        if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
-            $data['sort_order'] = $data['serial'];
-        }
+            $data = $request->validate([
+                'name' => ['required', 'string', 'max:200'],
+                'details' => ['nullable', 'string'],
+                'start_date' => ['required', 'date'],
+                'end_date' => ['required', 'date', 'after:start_date'],
+                'address' => ['nullable', 'string', 'max:255'],
+                'phone_number' => ['nullable', 'string', 'max:50'],
+                'facebook_url' => ['nullable', 'string', 'max:500'],
+                'instagram_url' => ['nullable', 'string', 'max:500'],
+                'website_url' => ['nullable', 'string', 'max:500'],
+                'google_map_url' => ['nullable', 'string', 'max:500'],
+                'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
+                'discount_value' => ['nullable', 'numeric', 'min:0'],
+                'thumbnail' => ['nullable', 'string', 'max:500'],
+                'cover' => ['nullable', 'string', 'max:500'],
+                'images' => ['nullable'],
+                'gallery_sort_order' => ['nullable'],
+                'videos' => ['nullable'],
+                'attributes' => ['nullable', 'array'],
+                'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+                'attributes.*.value_ids' => ['nullable', 'array'],
+                'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
+                'category_id' => ['nullable', 'exists:categories,id'],
+                'organization_id' => ['required', 'exists:users,id'],
+                'event_id' => ['nullable', 'exists:events,id'],
+                'area_id' => ['nullable', 'exists:areas,id'],
+                'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+                'sort_order' => ['nullable', 'integer', 'min:0'],
+                'serial' => ['nullable', 'integer', 'min:0'],
+                'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
+            ]);
 
-        $offer = DB::transaction(function () use ($data, $request) {
-            $requestedOrder = $data['sort_order'] ?? null;
-            $nextOrder = (int) Offer::max('sort_order') + 1;
-            $finalOrder = $requestedOrder === null ? $nextOrder : max(0, (int) $requestedOrder);
-
-            if ($requestedOrder !== null) {
-                Offer::where('sort_order', '>=', $finalOrder)->increment('sort_order');
+            if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
+                $data['sort_order'] = $data['serial'];
             }
 
-            return Offer::create([
-                ...$data,
-                'sort_order' => $finalOrder,
-                'images' => $this->toArrayField($data['images'] ?? []),
-                'videos' => $this->toArrayField($data['videos'] ?? []),
-                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-                'created_by' => $request->user()->id,
-            ]);
-        });
+            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+            if (!is_array($gallerySortOrder)) {
+                $gallerySortOrder = [];
+            }
 
-        return response()->json(['success' => true, 'offer' => $offer], 201);
+            $offer = DB::transaction(function () use ($data, $request, $gallerySortOrder) {
+                $requestedOrder = $data['sort_order'] ?? null;
+                $nextOrder = (int) Offer::max('sort_order') + 1;
+                $finalOrder = $requestedOrder === null ? $nextOrder : max(0, (int) $requestedOrder);
+
+                if ($requestedOrder !== null) {
+                    Offer::where('sort_order', '>=', $finalOrder)->increment('sort_order');
+                }
+
+                return Offer::create([
+                    ...$data,
+                    'sort_order' => $finalOrder,
+                    'images' => $this->toArrayField($data['images'] ?? []),
+                    'gallery_sort_order' => $gallerySortOrder,
+                    'videos' => $this->toArrayField($data['videos'] ?? []),
+                    'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
+                    'created_by' => $request->user()->id,
+                ]);
+            });
+
+            Log::info('API storeOffer success', ['offer_id' => $offer->id ?? null]);
+
+            return response()->json(['success' => true, 'offer' => $offer], 201);
+        } catch (\Throwable $e) {
+            Log::error('API storeOffer failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            throw $e;
+        }
     }
 
     public function updateOffer(Request $request, Offer $offer)
     {
-        $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:200'],
-            'details' => ['nullable', 'string'],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after:start_date'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:50'],
-            'facebook_url' => ['nullable', 'string', 'max:500'],
-            'instagram_url' => ['nullable', 'string', 'max:500'],
-            'website_url' => ['nullable', 'string', 'max:500'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
-            'discount_value' => ['nullable', 'numeric', 'min:0'],
-            'thumbnail' => ['nullable', 'string', 'max:500'],
-            'cover' => ['nullable', 'string', 'max:500'],
-            'images' => ['nullable'],
-            'videos' => ['nullable'],
-            'attributes' => ['nullable', 'array'],
-            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
-            'attributes.*.value_ids' => ['nullable', 'array'],
-            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'organization_id' => ['nullable', 'exists:users,id'],
-            'event_id' => ['nullable', 'exists:events,id'],
-            'area_id' => ['nullable', 'exists:areas,id'],
-            'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
-            'sort_order' => ['nullable', 'integer', 'min:0'],
-            'serial' => ['nullable', 'integer', 'min:0'],
-            'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
-        ]);
+        try {
+            Log::info('API updateOffer called', [
+                'user_id' => optional($request->user())->id,
+                'offer_id' => $offer->id,
+                'payload' => $request->except(['thumbnail', 'cover', 'images', 'videos']),
+                'has_images' => $request->has('images') || $request->hasFile('images'),
+                'has_videos' => $request->has('videos') || $request->hasFile('videos'),
+            ]);
 
-        if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
-            $data['sort_order'] = $data['serial'];
-        }
+            $data = $request->validate([
+                'name' => ['sometimes', 'string', 'max:200'],
+                'details' => ['nullable', 'string'],
+                'start_date' => ['nullable', 'date'],
+                'end_date' => ['nullable', 'date', 'after:start_date'],
+                'address' => ['nullable', 'string', 'max:255'],
+                'phone_number' => ['nullable', 'string', 'max:50'],
+                'facebook_url' => ['nullable', 'string', 'max:500'],
+                'instagram_url' => ['nullable', 'string', 'max:500'],
+                'website_url' => ['nullable', 'string', 'max:500'],
+                'google_map_url' => ['nullable', 'string', 'max:500'],
+                'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
+                'discount_value' => ['nullable', 'numeric', 'min:0'],
+                'thumbnail' => ['nullable', 'string', 'max:500'],
+                'cover' => ['nullable', 'string', 'max:500'],
+                'images' => ['nullable'],
+                'gallery_sort_order' => ['nullable'],
+                'videos' => ['nullable'],
+                'attributes' => ['nullable', 'array'],
+                'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+                'attributes.*.value_ids' => ['nullable', 'array'],
+                'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
+                'category_id' => ['nullable', 'exists:categories,id'],
+                'organization_id' => ['nullable', 'exists:users,id'],
+                'event_id' => ['nullable', 'exists:events,id'],
+                'area_id' => ['nullable', 'exists:areas,id'],
+                'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+                'sort_order' => ['nullable', 'integer', 'min:0'],
+                'serial' => ['nullable', 'integer', 'min:0'],
+                'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
+            ]);
 
-        if (array_key_exists('images', $data)) {
-            $data['images'] = $this->toArrayField($data['images']);
-        }
-        if (array_key_exists('videos', $data)) {
-            $data['videos'] = $this->toArrayField($data['videos']);
-        }
-        if (array_key_exists('attributes', $data)) {
-            $data['attributes'] = $this->normalizeAttributes($data['attributes']);
-        }
-
-        DB::transaction(function () use ($data, $offer, $request) {
-            if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
-                $newOrder = max(0, (int) $data['sort_order']);
-                $currentOrder = (int) $offer->sort_order;
-
-                if ($newOrder !== $currentOrder) {
-                    if ($newOrder < $currentOrder) {
-                        Offer::where('id', '!=', $offer->id)
-                            ->whereBetween('sort_order', [$newOrder, $currentOrder - 1])
-                            ->increment('sort_order');
-                    } else {
-                        Offer::where('id', '!=', $offer->id)
-                            ->whereBetween('sort_order', [$currentOrder + 1, $newOrder])
-                            ->decrement('sort_order');
-                    }
-                }
-
-                $data['sort_order'] = $newOrder;
+            if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
+                $data['sort_order'] = $data['serial'];
             }
 
-            $offer->update($data + ['updated_by' => $request->user()->id]);
-        });
-        return response()->json(['success' => true, 'offer' => $offer->fresh()]);
+            if (array_key_exists('images', $data)) {
+                $data['images'] = $this->toArrayField($data['images']);
+            }
+            if (array_key_exists('gallery_sort_order', $data)) {
+                $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
+                $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
+            }
+            if (array_key_exists('videos', $data)) {
+                $data['videos'] = $this->toArrayField($data['videos']);
+            }
+            if (array_key_exists('attributes', $data)) {
+                $data['attributes'] = $this->normalizeAttributes($data['attributes']);
+            }
+
+            DB::transaction(function () use ($data, $offer, $request) {
+                if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
+                    $newOrder = max(0, (int) $data['sort_order']);
+                    $currentOrder = (int) $offer->sort_order;
+
+                    if ($newOrder !== $currentOrder) {
+                        if ($newOrder < $currentOrder) {
+                            Offer::where('id', '!=', $offer->id)
+                                ->whereBetween('sort_order', [$newOrder, $currentOrder - 1])
+                                ->increment('sort_order');
+                        } else {
+                            Offer::where('id', '!=', $offer->id)
+                                ->whereBetween('sort_order', [$currentOrder + 1, $newOrder])
+                                ->decrement('sort_order');
+                        }
+                    }
+
+                    $data['sort_order'] = $newOrder;
+                }
+
+                $offer->update($data + ['updated_by' => $request->user()->id]);
+            });
+            Log::info('API updateOffer success', ['offer_id' => $offer->id]);
+            return response()->json(['success' => true, 'offer' => $offer->fresh()]);
+        } catch (\Throwable $e) {
+            Log::error('API updateOffer failed', [
+                'offer_id' => $offer->id,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            throw $e;
+        }
     }
 
     public function deleteOffer(Offer $offer)
