@@ -14,7 +14,7 @@
                 <div class="card-header">
                     <h3 class="card-title">Create Event</h3>
                 </div>
-                <form method="post" action="{{ route('admin.events.store') }}">
+                <form method="post" action="{{ route('admin.events.store') }}" enctype="multipart/form-data">
                     @csrf
                     <div class="card-body">
                         <div class="form-group">
@@ -26,8 +26,18 @@
                             <textarea name="description" class="form-control" rows="2"></textarea>
                         </div>
                         <div class="form-group">
-                            <label>Banner URL</label>
-                            <input name="banner" class="form-control">
+                            <label>Banner URL (optional)</label>
+                            <input name="banner_url" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>Banner gallery</label>
+                            <div class="custom-file">
+                                <input type="file" name="banner_files[]" class="custom-file-input banner-files-input" id="bannerFilesCreate" data-preview="bannerPreviewCreate" data-order="bannerOrderCreate" accept="image/*,video/*" multiple>
+                                <label class="custom-file-label" for="bannerFilesCreate">Choose files</label>
+                            </div>
+                            <small class="text-muted">Upload multiple images/videos.</small>
+                            <div class="mt-2 text-muted small" id="bannerPreviewCreate">No banner media selected.</div>
+                            <div class="mt-3" id="bannerOrderCreate"></div>
                         </div>
                         <div class="form-group">
                             <label>Location</label>
@@ -117,7 +127,7 @@
                             <div class="modal fade" id="editEvent{{ $event->id }}" tabindex="-1" role="dialog">
                                 <div class="modal-dialog" role="document">
                                     <div class="modal-content">
-                                        <form method="post" action="{{ route('admin.events.update', $event) }}">
+                                        <form method="post" action="{{ route('admin.events.update', $event) }}" enctype="multipart/form-data">
                                             @csrf @method('PUT')
                                             <div class="modal-header">
                                                 <h5 class="modal-title">Edit {{ $event->name }}</h5>
@@ -135,8 +145,44 @@
                                                     <textarea name="description" class="form-control" rows="2">{{ $event->description }}</textarea>
                                                 </div>
                                                 <div class="form-group">
-                                                    <label>Banner URL</label>
-                                                    <input name="banner" class="form-control" value="{{ is_array($event->banner) ? ($event->banner[0] ?? '') : $event->banner }}">
+                                                    <label>Banner URL (optional)</label>
+                                                    <input name="banner_url" class="form-control" value="{{ is_array($event->banner) ? ($event->banner[0] ?? '') : $event->banner }}">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Banner gallery</label>
+                                                    <div class="custom-file">
+                                                        <input type="file" name="banner_files[]" class="custom-file-input banner-files-input" id="bannerFiles{{ $event->id }}" data-preview="bannerPreview{{ $event->id }}" data-order="bannerOrder{{ $event->id }}" accept="image/*,video/*" multiple>
+                                                        <label class="custom-file-label" for="bannerFiles{{ $event->id }}">Choose files</label>
+                                                    </div>
+                                                    <small class="text-muted">Upload multiple images/videos.</small>
+                                                    <div class="mt-2 text-muted small" id="bannerPreview{{ $event->id }}">
+                                                        @if(!empty($event->banner))
+                                                            Current: {{ implode(', ', is_array($event->banner) ? $event->banner : [$event->banner]) }}
+                                                        @else
+                                                            No banner media selected.
+                                                        @endif
+                                                    </div>
+                                                    @if(!empty($event->banner))
+                                                        <div class="mt-3">
+                                                            <label class="d-block text-muted small mb-2">Banner sort order (existing)</label>
+                                                            @foreach((is_array($event->banner) ? $event->banner : [$event->banner]) as $index => $url)
+                                                                <div class="d-flex align-items-center mb-2">
+                                                                    <div class="text-muted small mr-2" style="min-width: 160px;">
+                                                                        {{ strlen($url) > 36 ? substr($url, 0, 33) . '...' : $url }}
+                                                                    </div>
+                                                                    <input
+                                                                        type="number"
+                                                                        name="gallery_sort_order_existing[{{ $url }}]"
+                                                                        class="form-control form-control-sm"
+                                                                        style="width: 90px;"
+                                                                        min="1"
+                                                                        value="{{ (is_array($event->gallery_sort_order ?? null) && array_key_exists($url, $event->gallery_sort_order)) ? $event->gallery_sort_order[$url] : ($index + 1) }}"
+                                                                    >
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    @endif
+                                                    <div class="mt-3" id="bannerOrder{{ $event->id }}"></div>
                                                 </div>
                                                 <div class="form-group">
                                                     <label>Location</label>
@@ -203,3 +249,61 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function() {
+        function setPreview(input, previewId) {
+            const preview = document.getElementById(previewId);
+            if (!preview) return;
+            const files = input.files;
+            if (!files || !files.length) {
+                preview.innerHTML = 'No banner media selected.';
+                return;
+            }
+            const items = [];
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const url = URL.createObjectURL(file);
+                    items.push(`<img src="${url}" style="height:60px;border-radius:8px;margin-right:6px;margin-bottom:6px;">`);
+                } else {
+                    items.push(file.name);
+                }
+            });
+            preview.innerHTML = items.join(' ');
+        }
+
+        function renderOrderInputs(input, orderId) {
+            const orderList = document.getElementById(orderId);
+            if (!orderList) return;
+            const files = input.files;
+            if (!files || !files.length) {
+                orderList.innerHTML = '';
+                return;
+            }
+            const rows = Array.from(files).map((file, index) => {
+                const display = file.name.length > 36 ? file.name.slice(0, 33) + '...' : file.name;
+                return `
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="text-muted small mr-2" style="min-width: 160px;">${display}</div>
+                        <input type="number" name="gallery_sort_order_new[]" class="form-control form-control-sm" style="width: 90px;" min="1" value="${index + 1}">
+                    </div>
+                `;
+            });
+            orderList.innerHTML = `
+                <label class="d-block text-muted small mb-2">Banner sort order (new uploads)</label>
+                ${rows.join('')}
+            `;
+        }
+
+        document.querySelectorAll('.banner-files-input').forEach((input) => {
+            input.addEventListener('change', () => {
+                const previewId = input.getAttribute('data-preview');
+                const orderId = input.getAttribute('data-order');
+                if (previewId) setPreview(input, previewId);
+                if (orderId) renderOrderInputs(input, orderId);
+            });
+        });
+    })();
+</script>
+@endpush

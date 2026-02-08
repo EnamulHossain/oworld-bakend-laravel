@@ -91,6 +91,8 @@ class OrganizationController extends Controller
             'name' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'banner' => ['nullable'],
+            'thumbnail' => ['nullable', 'string', 'max:500'],
+            'gallery_sort_order' => ['nullable'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
@@ -108,9 +110,15 @@ class OrganizationController extends Controller
             'category_id' => ['nullable', 'exists:categories,id'],
         ]);
 
+        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+        if (!is_array($gallerySortOrder)) {
+            $gallerySortOrder = [];
+        }
+
         $event = Event::create([
             ...$data,
             'banner' => $this->toArrayField($data['banner'] ?? []),
+            'gallery_sort_order' => $gallerySortOrder,
             'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
             'created_by' => $request->user()->id,
             'organization_id' => $request->user()->id,
@@ -129,6 +137,8 @@ class OrganizationController extends Controller
             'name' => ['sometimes', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
             'banner' => ['nullable'],
+            'thumbnail' => ['nullable', 'string', 'max:500'],
+            'gallery_sort_order' => ['nullable'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
@@ -148,6 +158,10 @@ class OrganizationController extends Controller
 
         if (array_key_exists('banner', $data)) {
             $data['banner'] = $this->toArrayField($data['banner']);
+        }
+        if (array_key_exists('gallery_sort_order', $data)) {
+            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
+            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
         }
         if (array_key_exists('attributes', $data)) {
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
@@ -178,6 +192,19 @@ class OrganizationController extends Controller
             'success' => true,
             'bannerUrl' => '/storage/' . $path,
             'mimeType' => $request->file('banner')->getClientMimeType(),
+        ], 201);
+    }
+
+    public function uploadThumbnail(Request $request)
+    {
+        $request->validate([
+            'thumbnail' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:20480'],
+        ]);
+
+        $path = $request->file('thumbnail')->store('uploads/events', 'public');
+        return response()->json([
+            'success' => true,
+            'thumbnailUrl' => '/storage/' . $path,
         ], 201);
     }
 
@@ -218,6 +245,7 @@ class OrganizationController extends Controller
             'thumbnail' => ['nullable', 'string', 'max:500'],
             'cover' => ['nullable', 'string', 'max:500'],
             'images' => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
             'videos' => ['nullable'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
@@ -229,9 +257,15 @@ class OrganizationController extends Controller
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
+        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+        if (!is_array($gallerySortOrder)) {
+            $gallerySortOrder = [];
+        }
+
         $offer = Offer::create([
             ...$data,
             'images' => $this->toArrayField($data['images'] ?? []),
+            'gallery_sort_order' => $gallerySortOrder,
             'videos' => $this->toArrayField($data['videos'] ?? []),
             'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
             'created_by' => $request->user()->id,
@@ -263,6 +297,7 @@ class OrganizationController extends Controller
             'thumbnail' => ['nullable', 'string', 'max:500'],
             'cover' => ['nullable', 'string', 'max:500'],
             'images' => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
             'videos' => ['nullable'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
@@ -276,6 +311,10 @@ class OrganizationController extends Controller
 
         if (array_key_exists('images', $data)) {
             $data['images'] = $this->toArrayField($data['images']);
+        }
+        if (array_key_exists('gallery_sort_order', $data)) {
+            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
+            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
         }
         if (array_key_exists('videos', $data)) {
             $data['videos'] = $this->toArrayField($data['videos']);
@@ -326,6 +365,16 @@ class OrganizationController extends Controller
         }
 
         return [];
+    }
+
+    private function normalizeJsonField($value)
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return $decoded ?? $value;
+        }
+
+        return $value;
     }
 
     private function normalizeAttributes($attributes): array

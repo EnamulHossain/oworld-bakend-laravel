@@ -71,6 +71,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::put('events/{event}', [AdminController::class, 'updateEvent']);
     Route::delete('events/{event}', [AdminController::class, 'deleteEvent']);
     Route::post('events/upload-banner', [AdminController::class, 'uploadEventBanner']);
+    Route::post('events/upload-thumbnail', [AdminController::class, 'uploadEventThumbnail']);
 
     Route::get('offers', [AdminController::class, 'listOffers']);
     Route::post('offers', [AdminController::class, 'storeOffer']);
@@ -114,6 +115,7 @@ Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')
     Route::put('events/{event}', [OrganizationController::class, 'updateEvent']);
     Route::delete('events/{event}', [OrganizationController::class, 'deleteEvent']);
     Route::post('events/upload-banner', [OrganizationController::class, 'uploadBanner']);
+    Route::post('events/upload-thumbnail', [OrganizationController::class, 'uploadThumbnail']);
 
     Route::get('offers', [OrganizationController::class, 'listOffers']);
     Route::post('offers', [OrganizationController::class, 'storeOffer']);
