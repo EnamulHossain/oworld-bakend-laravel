@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
@@ -101,8 +102,7 @@ class AuthController extends Controller
             'role' => $this->sanitizeRole($request->query('role')),
         ]);
 
-        $redirectUrl = Socialite::driver('google')
-            ->stateless()
+        $redirectUrl = $this->googleProvider($request)
             ->with(['state' => $state, 'prompt' => 'select_account'])
             ->redirect()
             ->getTargetUrl();
@@ -116,10 +116,31 @@ class AuthController extends Controller
         $frontendRedirect = $state['redirect'] ?? $this->defaultFrontendRedirect();
         $role = $state['role'] ?? 'user';
 
+        if ($request->filled('error')) {
+            $googleError = (string) $request->query('error', '');
+
+            return redirect($this->buildRedirectUrl($frontendRedirect, [
+                'error' => $this->mapGoogleCallbackError($googleError),
+            ]));
+        }
+
         try {
-            $googleUser = Socialite::driver('google')->stateless()->user();
+            $googleUser = $this->googleProvider($request)->user();
         } catch (\Throwable $e) {
-            return redirect($this->buildRedirectUrl($frontendRedirect, ['error' => 'google_auth_failed']));
+            try {
+                Log::warning('Google OAuth callback failed', [
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                    'redirect_uri' => $this->resolveGoogleRedirectUri($request),
+                    'request_host' => $request->getHost(),
+                ]);
+            } catch (\Throwable $logError) {
+                // Ignore logging failures so auth flow can still return a user-facing error.
+            }
+
+            return redirect($this->buildRedirectUrl($frontendRedirect, [
+                'error' => $this->mapOAuthFailureCode($e),
+            ]));
         }
 
         if (!$googleUser || !$googleUser->getEmail()) {
@@ -255,5 +276,67 @@ class AuthController extends Controller
     private function defaultFrontendRedirect(): string
     {
         return config('services.google.frontend_redirect') ?? config('app.url') ?? 'http://localhost';
+    }
+
+    private function googleProvider(Request $request)
+    {
+        return Socialite::driver('google')
+            ->stateless()
+            ->redirectUrl($this->resolveGoogleRedirectUri($request));
+    }
+
+    private function resolveGoogleRedirectUri(Request $request): string
+    {
+        $configured = trim((string) config('services.google.redirect', ''));
+        $requestBased = $request->getUriForPath('/api/auth/google/callback');
+
+        if ($configured === '') {
+            return $requestBased;
+        }
+
+        $configuredHost = parse_url($configured, PHP_URL_HOST);
+        $requestHost = $request->getHost();
+
+        if ($this->isLocalHost($requestHost) && !$this->isLocalHost($configuredHost)) {
+            return $requestBased;
+        }
+
+        return $configured;
+    }
+
+    private function isLocalHost(?string $host): bool
+    {
+        if (!$host) {
+            return false;
+        }
+
+        return in_array(strtolower($host), ['localhost', '127.0.0.1', '::1'], true);
+    }
+
+    private function mapGoogleCallbackError(string $error): string
+    {
+        return match ($error) {
+            'access_denied' => 'google_access_denied',
+            default => 'google_auth_failed',
+        };
+    }
+
+    private function mapOAuthFailureCode(\Throwable $e): string
+    {
+        $message = strtolower($e->getMessage());
+
+        if (str_contains($message, 'redirect_uri_mismatch')) {
+            return 'google_redirect_uri_mismatch';
+        }
+
+        if (str_contains($message, 'invalid_client')) {
+            return 'google_invalid_client';
+        }
+
+        if (str_contains($message, 'invalid_grant')) {
+            return 'google_invalid_grant';
+        }
+
+        return 'google_auth_failed';
     }
 }
