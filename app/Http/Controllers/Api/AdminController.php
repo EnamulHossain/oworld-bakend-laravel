@@ -721,6 +721,7 @@ class AdminController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'items' => ['nullable', 'array'],
             'items.*.title' => ['nullable', 'string', 'max:200'],
+            'items.*.subtitle' => ['nullable', 'string', 'max:255'],
             'items.*.description' => ['nullable', 'string'],
             'items.*.offer_id' => ['nullable', 'exists:offers,id'],
             'items.*.event_id' => ['nullable', 'exists:events,id'],
@@ -772,6 +773,7 @@ class AdminController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'items' => ['nullable', 'array'],
             'items.*.title' => ['nullable', 'string', 'max:200'],
+            'items.*.subtitle' => ['nullable', 'string', 'max:255'],
             'items.*.description' => ['nullable', 'string'],
             'items.*.offer_id' => ['nullable', 'exists:offers,id'],
             'items.*.event_id' => ['nullable', 'exists:events,id'],
@@ -859,6 +861,7 @@ class AdminController extends Controller
 
             $normalized[] = [
                 'title' => $item['title'] ?? null,
+                'subtitle' => $item['subtitle'] ?? null,
                 'description' => $item['description'] ?? null,
                 'offer_id' => $offerId,
                 'event_id' => $eventId,
