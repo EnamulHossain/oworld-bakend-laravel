@@ -586,6 +586,7 @@ class PublicController extends Controller
                     return [
                         'id' => $item->id,
                         'title' => $item->title,
+                        'subtitle' => $item->subtitle,
                         'description' => $item->description,
                         'offer_id' => $item->offer_id,
                         'event_id' => $item->event_id,

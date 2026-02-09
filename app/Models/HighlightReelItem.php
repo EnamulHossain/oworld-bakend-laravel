@@ -14,6 +14,7 @@ class HighlightReelItem extends Model
     protected $fillable = [
         'highlight_id',
         'title',
+        'subtitle',
         'description',
         'offer_id',
         'event_id',
