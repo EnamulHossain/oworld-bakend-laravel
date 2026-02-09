@@ -429,7 +429,7 @@ class PublicController extends Controller
                 'teared_block' => (bool) $block->teared_block,
                 'thumbnail_image' => $block->thumbnail_image,
                 'featured_sort_order' => $block->featured_sort_order,
-                'items' => $block->items->take(10)->map(fn ($item) => [
+                'items' => $block->items->map(fn ($item) => [
                     'id' => $item->id,
                     'type' => $item->type,
                     'targetId' => $item->target_id,
@@ -439,7 +439,7 @@ class PublicController extends Controller
                     'image' => $item->image,
                     'external_link' => $item->external_link,
                     'sort_order' => $item->sort_order,
-                ]),
+                ])->values(),
             ];
         });
 

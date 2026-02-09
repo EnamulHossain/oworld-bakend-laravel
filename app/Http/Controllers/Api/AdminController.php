@@ -1151,7 +1151,7 @@ class AdminController extends Controller
     public function updateContentBlockItems(Request $request, ContentBlock $contentBlock)
     {
         $data = $request->validate([
-            'items' => ['nullable', 'array', 'max:10'],
+            'items' => ['nullable', 'array'],
             'items.*.type' => ['required', Rule::in(['category', 'event', 'offer'])],
             'items.*.target_id' => ['nullable', 'integer'],
             'items.*.title' => ['nullable', 'string', 'max:200'],
