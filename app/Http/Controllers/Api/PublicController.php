@@ -793,25 +793,51 @@ class PublicController extends Controller
         }
 
         $limit = min((int)$request->query('limit', 5), 15);
+        $normalizedQuery = strtolower($q);
+        $searchOffersByType = in_array($normalizedQuery, ['offer', 'offers'], true);
+        $searchEventsByType = in_array($normalizedQuery, ['event', 'events'], true);
+        $searchCategoriesByType = in_array($normalizedQuery, ['category', 'categories'], true);
 
         $categories = Category::query()
             ->where('status', 'active')
-            ->where(function ($builder) use ($q) {
+            ->where(function ($builder) use ($q, $searchCategoriesByType) {
                 $builder->where('name', 'like', "%{$q}%")
                     ->orWhere('description', 'like', "%{$q}%")
                     ->orWhere('short_name', 'like', "%{$q}%");
+
+                if ($searchCategoriesByType) {
+                    $builder->orWhereRaw('1 = 1');
+                }
             })
+            ->orderBy('name')
             ->limit($limit)
             ->get(['id', 'name', 'short_name', 'description', 'icon'])
-            ->map(fn ($cat) => ['type' => 'category', ...$cat->toArray()]);
+            ->map(fn ($cat) => [
+                'type' => 'category',
+                'id' => $cat->id,
+                'title' => $cat->name,
+                'name' => $cat->name,
+                'short_name' => $cat->short_name,
+                'description' => $cat->description,
+                'subtitle' => $cat->short_name,
+                'icon' => $cat->icon,
+            ]);
 
         $events = Event::query()
             ->where('status', 'published')
-            ->where(function ($builder) use ($q) {
+            ->where(function ($builder) use ($q, $searchEventsByType) {
                 $builder->where('name', 'like', "%{$q}%")
                     ->orWhere('description', 'like', "%{$q}%")
                     ->orWhere('location', 'like', "%{$q}%")
-                    ->orWhere('address', 'like', "%{$q}%");
+                    ->orWhere('address', 'like', "%{$q}%")
+                    ->orWhereHas('organization', function ($orgQuery) use ($q) {
+                        $orgQuery->where('organization_name', 'like', "%{$q}%")
+                            ->orWhere('username', 'like', "%{$q}%");
+                    });
+
+                if ($searchEventsByType) {
+                    $builder->orWhereRaw('1 = 1');
+                }
             })
             ->orderBy('starting_date')
             ->limit($limit)
@@ -828,9 +854,19 @@ class PublicController extends Controller
 
         $offers = Offer::query()
             ->where('status', 'active')
-            ->where(function ($builder) use ($q) {
+            ->where(function ($builder) use ($q, $searchOffersByType) {
                 $builder->where('name', 'like', "%{$q}%")
-                    ->orWhere('details', 'like', "%{$q}%");
+                    ->orWhere('details', 'like', "%{$q}%")
+                    ->orWhere('address', 'like', "%{$q}%")
+                    ->orWhere('phone_number', 'like', "%{$q}%")
+                    ->orWhereHas('organization', function ($orgQuery) use ($q) {
+                        $orgQuery->where('organization_name', 'like', "%{$q}%")
+                            ->orWhere('username', 'like', "%{$q}%");
+                    });
+
+                if ($searchOffersByType) {
+                    $builder->orWhereRaw('1 = 1');
+                }
             })
             ->orderBy('start_date')
             ->limit($limit)
