@@ -13,6 +13,7 @@ use App\Models\HighlightReelItem;
 use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -536,6 +537,8 @@ class AdminController extends Controller
                 $data['sort_order'] = $data['serial'];
             }
 
+            $data = $this->applyDefaultOfferTimes($data);
+
             $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
             if (!is_array($gallerySortOrder)) {
                 $gallerySortOrder = [];
@@ -620,6 +623,8 @@ class AdminController extends Controller
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
                 $data['sort_order'] = $data['serial'];
             }
+
+            $data = $this->applyDefaultOfferTimes($data);
 
             if (array_key_exists('images', $data)) {
                 $data['images'] = $this->toArrayField($data['images']);
@@ -1386,6 +1391,33 @@ class AdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function applyDefaultOfferTimes(array $data): array
+    {
+        if (array_key_exists('start_date', $data) && $data['start_date']) {
+            $data['start_date'] = $this->normalizeOfferDateTime((string) $data['start_date'], '00:00:00');
+        }
+
+        if (array_key_exists('end_date', $data) && $data['end_date']) {
+            $data['end_date'] = $this->normalizeOfferDateTime((string) $data['end_date'], '23:59:59');
+        }
+
+        return $data;
+    }
+
+    private function normalizeOfferDateTime(string $value, string $defaultTime): string
+    {
+        $raw = trim($value);
+        $hasExplicitTime = (bool) preg_match('/\d{1,2}:\d{2}/', $raw);
+        $dateTime = Carbon::parse($raw);
+
+        if (!$hasExplicitTime) {
+            [$hour, $minute, $second] = array_map('intval', explode(':', $defaultTime));
+            $dateTime->setTime($hour, $minute, $second);
+        }
+
+        return $dateTime->format('Y-m-d H:i:s');
     }
 
     private function normalizeHomeSlider($value): array
