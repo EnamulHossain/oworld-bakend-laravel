@@ -33,13 +33,13 @@ class WishlistController extends Controller
         $items = $query->get();
 
         $events = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name,image'])
             ->whereIn('id', $items->where('item_type', 'event')->pluck('item_id'))
             ->get()
             ->keyBy('id');
 
         $offers = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name,image'])
             ->whereIn('id', $items->where('item_type', 'offer')->pluck('item_id'))
             ->get()
             ->keyBy('id');
@@ -103,13 +103,13 @@ class WishlistController extends Controller
     {
         if ($type === 'event') {
             return Event::query()
-                ->with(['organization:id,organization_name', 'category:id,name'])
+                ->with(['organization:id,organization_name', 'category:id,name,image'])
                 ->where('status', 'published')
                 ->find($id);
         }
 
         return Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->with(['organization:id,organization_name', 'category:id,name,image'])
             ->where('status', 'active')
             ->find($id);
     }
@@ -132,7 +132,8 @@ class WishlistController extends Controller
     private function transformTarget(string $type, Event|Offer $item): array
     {
         if ($type === 'event') {
-            $image = is_array($item->banner) ? ($item->banner[0] ?? null) : $item->banner;
+            $banner = is_array($item->banner) ? $item->banner : [];
+            $image = $item->thumbnail;
 
             return [
                 'id' => $item->id,
@@ -142,10 +143,13 @@ class WishlistController extends Controller
                 'endDate' => $item->end_date,
                 'location' => $item->location,
                 'image' => $image,
+                'thumbnail' => $item->thumbnail,
+                'banner' => $banner,
                 'organizationName' => $item->organization?->organization_name,
                 'category' => $item->category ? [
                     'id' => $item->category->id,
                     'name' => $item->category->name,
+                    'image' => $item->category->image,
                 ] : null,
                 'type' => 'event',
             ];
@@ -161,11 +165,15 @@ class WishlistController extends Controller
             'endDate' => $item->end_date,
             'discount_type' => $item->discount_type,
             'discount_value' => $item->discount_value,
-            'image' => $item->cover ?: ($images[0] ?? null),
+            'image' => $item->thumbnail,
+            'thumbnail' => $item->thumbnail,
+            'cover' => $item->cover,
+            'images' => $images,
             'organizationName' => $item->organization?->organization_name,
             'category' => $item->category ? [
                 'id' => $item->category->id,
                 'name' => $item->category->name,
+                'image' => $item->category->image,
             ] : null,
             'type' => 'offer',
         ];
