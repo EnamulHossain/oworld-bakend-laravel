@@ -339,6 +339,7 @@ class PublicController extends Controller
         $offset = max((int)$request->query('offset', 0), 0);
 
         $categoryId = $request->query('category_id');
+        $offerType = strtolower((string)$request->query('offer_type', ''));
 
         $query = Offer::query()
             ->with([
@@ -348,6 +349,9 @@ class PublicController extends Controller
             ])
             ->where('status', 'active')
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
+            ->when($offerType === 'exclusive', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) = 'exclusive'"))
+            ->when($offerType === 'regular', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) <> 'exclusive'"))
+            ->orderByRaw("CASE WHEN LOWER(COALESCE(offer_type, '')) = 'exclusive' THEN 0 ELSE 1 END")
             ->orderBy('sort_order')
             ->orderBy('start_date')
             ->orderByDesc('created_at');
@@ -422,6 +426,7 @@ class PublicController extends Controller
             'offers' => $offers,
             'filters' => [
                 'category_id' => $categoryId,
+                'offer_type' => in_array($offerType, ['exclusive', 'regular'], true) ? $offerType : null,
             ],
             'pagination' => [
                 'limit' => $limit,
