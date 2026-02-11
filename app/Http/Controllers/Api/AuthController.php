@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
@@ -86,6 +87,53 @@ class AuthController extends Controller
             'message' => 'Login successful',
             'token' => $token,
             'user' => $this->formatUser($user),
+        ]);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $user = User::where('email', $data['email'])->first();
+
+        // Keep response generic to avoid exposing whether an email exists.
+        if (!$user) {
+            return response()->json([
+                'message' => 'If this email exists, a temporary password has been sent.',
+            ]);
+        }
+
+        $temporaryPassword = $this->generateTemporaryPassword();
+        $user->password = Hash::make($temporaryPassword);
+        $user->save();
+
+        try {
+            Mail::raw(
+                "Hello {$user->username},\n\n" .
+                "Your temporary password is: {$temporaryPassword}\n\n" .
+                "Please log in and change your password immediately from your profile settings.\n\n" .
+                "Regards,\nOworld Support",
+                function ($message) use ($user) {
+                    $message->from('support@oworldbd.com', 'Oworld Support');
+                    $message->to($user->email);
+                    $message->subject('Your Temporary Password - Oworld');
+                }
+            );
+        } catch (\Throwable $e) {
+            Log::error('Forgot password email failed', [
+                'email' => $user->email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Could not send temporary password email. Please try again later.',
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => 'If this email exists, a temporary password has been sent.',
         ]);
     }
 
@@ -205,6 +253,14 @@ class AuthController extends Controller
     private function sanitizeRole(?string $role): string
     {
         return in_array($role, ['user', 'organization'], true) ? $role : 'user';
+    }
+
+    private function generateTemporaryPassword(): string
+    {
+        $letters = Str::upper(Str::random(4));
+        $numbers = (string) random_int(1000, 9999);
+
+        return $letters . $numbers;
     }
 
     private function decodeState(?string $state): array
