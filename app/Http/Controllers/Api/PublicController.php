@@ -160,6 +160,7 @@ class PublicController extends Controller
     public function events(Request $request)
     {
         $limit = min((int)$request->query('limit', 20), 100);
+        $offset = max((int)$request->query('offset', 0), 0);
         $categoryId = $request->query('category_id');
 
         $query = Event::query()
@@ -175,7 +176,8 @@ class PublicController extends Controller
         if ($categoryId) {
             $query->where('category_id', $categoryId);
         }
-        $events = $query->limit($limit)->get([
+        $total = (clone $query)->count();
+        $events = $query->skip($offset)->limit($limit)->get([
             'id',
             'name',
             'description',
@@ -225,6 +227,13 @@ class PublicController extends Controller
             'events' => $events,
             'filters' => [
                 'category_id' => $categoryId,
+            ],
+            'pagination' => [
+                'limit' => $limit,
+                'offset' => $offset,
+                'total' => $total,
+                'count' => $events->count(),
+                'has_more' => ($offset + $events->count()) < $total,
             ],
         ]);
     }
@@ -327,10 +336,11 @@ class PublicController extends Controller
     public function offers(Request $request)
     {
         $limit = min((int)$request->query('limit', 20), 100);
+        $offset = max((int)$request->query('offset', 0), 0);
 
         $categoryId = $request->query('category_id');
 
-        $offers = Offer::query()
+        $query = Offer::query()
             ->with([
                 'organization:id,organization_name',
                 'category:id,name',
@@ -340,7 +350,12 @@ class PublicController extends Controller
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
             ->orderBy('sort_order')
             ->orderBy('start_date')
-            ->orderByDesc('created_at')
+            ->orderByDesc('created_at');
+
+        $total = (clone $query)->count();
+
+        $offers = $query
+            ->skip($offset)
             ->limit($limit)
             ->get([
                 'id',
@@ -407,6 +422,13 @@ class PublicController extends Controller
             'offers' => $offers,
             'filters' => [
                 'category_id' => $categoryId,
+            ],
+            'pagination' => [
+                'limit' => $limit,
+                'offset' => $offset,
+                'total' => $total,
+                'count' => $offers->count(),
+                'has_more' => ($offset + $offers->count()) < $total,
             ],
         ]);
     }
