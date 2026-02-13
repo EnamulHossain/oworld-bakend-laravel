@@ -18,7 +18,9 @@ class Event extends Model
         'attributes',
         'status',
         'starting_date',
+        'start_time',
         'end_date',
+        'end_time',
         'location',
         'area_id',
         'address',
@@ -33,8 +35,8 @@ class Event extends Model
     ];
 
     protected $casts = [
-        'starting_date' => 'datetime',
-        'end_date' => 'datetime',
+        'starting_date' => 'date',
+        'end_date' => 'date',
         'banner' => 'array',
         'gallery_sort_order' => 'array',
         'attributes' => 'array',

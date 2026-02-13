@@ -348,7 +348,9 @@ class AdminController extends Controller
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after:starting_date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_date' => ['required', 'date', 'after_or_equal:starting_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
@@ -365,6 +367,8 @@ class AdminController extends Controller
         if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
             $data['sort_order'] = $data['serial'];
         }
+
+        $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
@@ -396,7 +400,9 @@ class AdminController extends Controller
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after:starting_date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:starting_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
@@ -413,6 +419,8 @@ class AdminController extends Controller
         if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
             $data['sort_order'] = $data['serial'];
         }
+
+        $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
         if (array_key_exists('banner', $data)) {
             $data['banner'] = $this->toArrayField($data['banner']);
@@ -505,7 +513,9 @@ class AdminController extends Controller
                 'name' => ['required', 'string', 'max:200'],
                 'details' => ['nullable', 'string'],
                 'start_date' => ['required', 'date'],
-                'end_date' => ['required', 'date', 'after:start_date'],
+                'start_time' => ['nullable', 'date_format:H:i'],
+                'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+                'end_time' => ['nullable', 'date_format:H:i'],
                 'address' => ['nullable', 'string', 'max:255'],
                 'phone_number' => ['nullable', 'string', 'max:50'],
                 'facebook_url' => ['nullable', 'string', 'max:500'],
@@ -537,7 +547,7 @@ class AdminController extends Controller
                 $data['sort_order'] = $data['serial'];
             }
 
-            $data = $this->applyDefaultOfferTimes($data);
+            $data = $this->normalizeDateAndTimeFields($data, 'start_date');
 
             $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
             if (!is_array($gallerySortOrder)) {
@@ -592,7 +602,9 @@ class AdminController extends Controller
                 'name' => ['sometimes', 'string', 'max:200'],
                 'details' => ['nullable', 'string'],
                 'start_date' => ['nullable', 'date'],
-                'end_date' => ['nullable', 'date', 'after:start_date'],
+                'start_time' => ['nullable', 'date_format:H:i'],
+                'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+                'end_time' => ['nullable', 'date_format:H:i'],
                 'address' => ['nullable', 'string', 'max:255'],
                 'phone_number' => ['nullable', 'string', 'max:50'],
                 'facebook_url' => ['nullable', 'string', 'max:500'],
@@ -624,7 +636,7 @@ class AdminController extends Controller
                 $data['sort_order'] = $data['serial'];
             }
 
-            $data = $this->applyDefaultOfferTimes($data);
+            $data = $this->normalizeDateAndTimeFields($data, 'start_date');
 
             if (array_key_exists('images', $data)) {
                 $data['images'] = $this->toArrayField($data['images']);
@@ -1396,31 +1408,75 @@ class AdminController extends Controller
         return $value;
     }
 
-    private function applyDefaultOfferTimes(array $data): array
+    private function normalizeDateAndTimeFields(array $data, string $dateFieldPrefix): array
     {
-        if (array_key_exists('start_date', $data) && $data['start_date']) {
-            $data['start_date'] = $this->normalizeOfferDateTime((string) $data['start_date'], '00:00:00');
+        $startDateField = $dateFieldPrefix;
+        $startTimeField = 'start_time';
+        $endDateField = 'end_date';
+        $endTimeField = 'end_time';
+
+        if (array_key_exists($startDateField, $data) && $data[$startDateField]) {
+            [$normalizedDate, $timeFromDate] = $this->extractDateAndTime((string) $data[$startDateField]);
+            $data[$startDateField] = $normalizedDate;
+            if (empty($data[$startTimeField]) && $timeFromDate !== null) {
+                $data[$startTimeField] = $timeFromDate;
+            }
         }
 
-        if (array_key_exists('end_date', $data) && $data['end_date']) {
-            $data['end_date'] = $this->normalizeOfferDateTime((string) $data['end_date'], '23:59:59');
+        if (array_key_exists($endDateField, $data) && $data[$endDateField]) {
+            [$normalizedDate, $timeFromDate] = $this->extractDateAndTime((string) $data[$endDateField]);
+            $data[$endDateField] = $normalizedDate;
+            if (empty($data[$endTimeField]) && $timeFromDate !== null) {
+                $data[$endTimeField] = $timeFromDate;
+            }
+        }
+
+        if (array_key_exists($startTimeField, $data)) {
+            $data[$startTimeField] = $this->normalizeTimeValue($data[$startTimeField]);
+        }
+        if (array_key_exists($endTimeField, $data)) {
+            $data[$endTimeField] = $this->normalizeTimeValue($data[$endTimeField]);
         }
 
         return $data;
     }
 
-    private function normalizeOfferDateTime(string $value, string $defaultTime): string
+    private function extractDateAndTime(string $value): array
     {
         $raw = trim($value);
-        $hasExplicitTime = (bool) preg_match('/\d{1,2}:\d{2}/', $raw);
-        $dateTime = Carbon::parse($raw);
-
-        if (!$hasExplicitTime) {
-            [$hour, $minute, $second] = array_map('intval', explode(':', $defaultTime));
-            $dateTime->setTime($hour, $minute, $second);
+        if ($raw === '') {
+            return [null, null];
         }
 
-        return $dateTime->format('Y-m-d H:i:s');
+        $parsed = Carbon::parse($raw);
+        $date = $parsed->toDateString();
+        $hasExplicitTime = (bool) preg_match('/\d{1,2}:\d{2}/', $raw);
+        if (!$hasExplicitTime) {
+            return [$date, null];
+        }
+
+        $time = $parsed->format('H:i:s');
+        if (in_array($time, ['00:00:00', '23:59:59'], true)) {
+            return [$date, null];
+        }
+
+        return [$date, $time];
+    }
+
+    private function normalizeTimeValue($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+        $parsed = Carbon::parse($raw)->format('H:i:s');
+        if (in_array($parsed, ['00:00:00', '23:59:59'], true)) {
+            return null;
+        }
+        return $parsed;
     }
 
     private function normalizeHomeSlider($value): array

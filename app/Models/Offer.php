@@ -13,7 +13,9 @@ class Offer extends Model
         'name',
         'details',
         'start_date',
+        'start_time',
         'end_date',
+        'end_time',
         'address',
         'phone_number',
         'facebook_url',
@@ -40,8 +42,8 @@ class Offer extends Model
     ];
 
     protected $casts = [
-        'start_date' => 'datetime',
-        'end_date' => 'datetime',
+        'start_date' => 'date',
+        'end_date' => 'date',
         'images' => 'array',
         'gallery_sort_order' => 'array',
         'videos' => 'array',
