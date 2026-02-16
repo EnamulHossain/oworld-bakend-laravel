@@ -79,6 +79,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::put('offers/{offer}', [AdminController::class, 'updateOffer']);
     Route::delete('offers/{offer}', [AdminController::class, 'deleteOffer']);
     Route::post('offers/upload-media', [AdminController::class, 'uploadOfferMedia']);
+    Route::get('coupons', [AdminController::class, 'listCoupons']);
+    Route::post('coupons', [AdminController::class, 'storeCoupon']);
 
     Route::get('highlights', [AdminController::class, 'listHighlights']);
     Route::post('highlights', [AdminController::class, 'storeHighlight']);

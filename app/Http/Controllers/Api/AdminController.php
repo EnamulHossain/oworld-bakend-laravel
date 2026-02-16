@@ -7,6 +7,8 @@ use App\Models\Area;
 use App\Models\Attribute;
 use App\Models\Category;
 use App\Models\ContentBlock;
+use App\Models\Coupon;
+use App\Models\CouponDetail;
 use App\Models\Event;
 use App\Models\HighlightReel;
 use App\Models\HighlightReelItem;
@@ -707,6 +709,99 @@ class AdminController extends Controller
         ], 201);
     }
 
+    public function listCoupons(Request $request)
+    {
+        $query = Coupon::query()
+            ->with([
+                'organization:id,organization_name,username',
+            ])
+            ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
+            ->when($request->query('search'), function ($q, $term) {
+                $q->where(function ($inner) use ($term) {
+                    $inner->where('name', 'like', "%{$term}%");
+                });
+            })
+            ->orderByDesc('id');
+
+        $coupons = $query->paginate((int) $request->query('limit', 50));
+
+        return response()->json([
+            'success' => true,
+            'coupons' => $coupons->items(),
+            'pagination' => [
+                'total' => $coupons->total(),
+                'per_page' => $coupons->perPage(),
+                'current_page' => $coupons->currentPage(),
+                'last_page' => $coupons->lastPage(),
+            ],
+        ]);
+    }
+
+    public function storeCoupon(Request $request)
+    {
+        $data = $request->validate([
+            'coupon_name' => ['required', 'string', 'max:200'],
+            'offer_id' => ['nullable', 'exists:offers,id'],
+            'event_id' => ['nullable', 'exists:events,id'],
+            'organization_id' => ['nullable', 'exists:users,id'],
+            'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
+            'start_date' => ['nullable', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'coupon_no' => ['required', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+        $couponCount = (int) ($data['coupon_no'] ?? 1);
+        $masterPayload = [
+            'name' => trim((string) $data['coupon_name']),
+            'organization_id' => $data['organization_id'] ?? null,
+            'status' => $data['status'] ?? 'draft',
+            'start_date' => $data['start_date'] ?? null,
+            'start_time' => $data['start_time'] ?? null,
+            'end_date' => $data['end_date'] ?? null,
+            'end_time' => $data['end_time'] ?? null,
+            'total_coupon' => $couponCount,
+            'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
+        ];
+
+        $detailPayload = [
+            'offer_id' => $data['offer_id'] ?? null,
+            'event_id' => $data['event_id'] ?? null,
+            'organization_id' => $data['organization_id'] ?? null,
+            'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
+            'is_used' => false,
+            'used_at' => null,
+        ];
+
+        $createdCoupons = DB::transaction(function () use ($couponCount, $masterPayload, $detailPayload) {
+            $master = Coupon::create($masterPayload);
+
+            for ($index = 0; $index < $couponCount; $index++) {
+                CouponDetail::create([
+                    ...$detailPayload,
+                    'coupon_id' => $master->id,
+                    'coupon' => $this->generateUniqueCouponCode(),
+                ]);
+            }
+
+            return Coupon::query()
+                ->with(['organization:id,organization_name,username'])
+                ->where('id', $master->id)
+                ->get();
+        });
+
+        return response()->json([
+            'success' => true,
+            'created_count' => $createdCoupons->count(),
+            'coupons' => $createdCoupons->values(),
+        ], 201);
+    }
+
     public function listHighlights()
     {
         $highlights = HighlightReel::query()
@@ -1335,6 +1430,17 @@ class AdminController extends Controller
     {
         $attribute->delete();
         return response()->json(['success' => true]);
+    }
+
+    private function generateUniqueCouponCode(): string
+    {
+        do {
+            $prefix = Str::random(5);
+            $timestamp = now()->format('YmdHisv');
+            $code = $prefix . $timestamp;
+        } while (CouponDetail::where('coupon', $code)->exists());
+
+        return $code;
     }
 
     private function findExistingOrganization(string $organizationName): ?User
