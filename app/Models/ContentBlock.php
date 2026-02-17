@@ -3,9 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 
-class ContentBlock extends Model
+class ContentBlock extends BaseModel
 {
     use HasFactory;
 
