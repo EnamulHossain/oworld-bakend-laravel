@@ -13,6 +13,7 @@ class Attribute extends Model
         'name',
         'type',
         'sort_order',
+        'status',
     ];
 
     public function values()

@@ -1333,6 +1333,9 @@ class AdminController extends Controller
         if ($request->query('type')) {
             $query->where('type', $request->query('type'));
         }
+        if ($request->query('status')) {
+            $query->where('status', $request->query('status'));
+        }
 
         $attributes = $query
             ->orderBy('sort_order')
@@ -1352,6 +1355,7 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'status' => ['nullable', Rule::in(['active', 'draft', 'inactive'])],
             'values' => ['nullable', 'array'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
@@ -1362,6 +1366,7 @@ class AdminController extends Controller
                 'name' => $data['name'],
                 'type' => $data['type'],
                 'sort_order' => (int) ($data['sort_order'] ?? 0),
+                'status' => $data['status'] ?? 'active',
             ]);
 
             $values = $this->normalizeAttributeValues($data['values'] ?? []);
@@ -1388,6 +1393,7 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'status' => ['sometimes', Rule::in(['active', 'draft', 'inactive'])],
             'values' => ['nullable', 'array'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
@@ -1402,6 +1408,9 @@ class AdminController extends Controller
             }
             if (array_key_exists('sort_order', $data)) {
                 $attribute->sort_order = (int) ($data['sort_order'] ?? 0);
+            }
+            if (array_key_exists('status', $data)) {
+                $attribute->status = $data['status'];
             }
             $attribute->save();
 

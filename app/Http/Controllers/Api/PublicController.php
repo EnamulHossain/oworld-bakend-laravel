@@ -951,7 +951,9 @@ class PublicController extends Controller
 
     public function attributes(Request $request)
     {
-        $query = Attribute::query()->with(['values' => fn ($q) => $q->orderBy('id')]);
+        $query = Attribute::query()
+            ->where('status', 'active')
+            ->with(['values' => fn ($q) => $q->orderBy('id')]);
 
         if ($request->query('search')) {
             $term = $request->query('search');
