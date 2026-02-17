@@ -12,6 +12,7 @@ class Attribute extends BaseModel
         'name',
         'type',
         'sort_order',
+        'status',
     ];
 
     public function values()
