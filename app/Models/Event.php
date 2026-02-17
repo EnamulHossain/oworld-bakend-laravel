@@ -23,6 +23,7 @@ class Event extends BaseModel
         'location',
         'area_id',
         'address',
+        'phone_number',
         'facebook_url',
         'instagram_url',
         'website_url',
