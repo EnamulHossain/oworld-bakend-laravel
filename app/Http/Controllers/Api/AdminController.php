@@ -73,7 +73,20 @@ class AdminController extends Controller
                 });
             })
             ->orderByDesc('created_at')
-            ->get(['id', 'username', 'email', 'organization_name', 'business_type', 'phone', 'created_at']);
+            ->get([
+                'id',
+                'username',
+                'email',
+                'organization_name',
+                'business_type',
+                'phone',
+                'address',
+                'facebook_url',
+                'instagram_url',
+                'website_url',
+                'google_map_url',
+                'created_at',
+            ]);
 
         return response()->json([
             'success' => true,
@@ -386,6 +399,8 @@ class AdminController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
+        $this->syncOrganizationEventContactDefaults($data);
+
         return response()->json(['success' => true, 'event' => $event], 201);
     }
 
@@ -567,7 +582,7 @@ class AdminController extends Controller
                     Offer::where('sort_order', '>=', $finalOrder)->increment('sort_order');
                 }
 
-                return Offer::create([
+                $offer = Offer::create([
                     ...$data,
                     'sort_order' => $finalOrder,
                     'images' => $this->toArrayField($data['images'] ?? []),
@@ -576,6 +591,10 @@ class AdminController extends Controller
                     'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
                     'created_by' => $request->user()->id,
                 ]);
+
+                $this->syncOrganizationOfferContactDefaults($data);
+
+                return $offer;
             });
 
             Log::info('API storeOffer success', ['offer_id' => $offer->id ?? null]);
@@ -1683,6 +1702,113 @@ class AdminController extends Controller
         return $normalized;
     }
 
+    private function syncOrganizationOfferContactDefaults(array $offerData): void
+    {
+        $organizationId = $offerData['organization_id'] ?? null;
+        if (!$organizationId) {
+            return;
+        }
+
+        $organization = User::query()
+            ->where('id', $organizationId)
+            ->where('role', 'organization')
+            ->first();
+        if (!$organization) {
+            return;
+        }
+
+        $updates = $this->buildOrganizationContactUpdatesFromOffer($organization, $offerData);
+        if (!empty($updates)) {
+            $organization->update($updates);
+        }
+    }
+
+    private function syncOrganizationEventContactDefaults(array $eventData): void
+    {
+        $organizationId = $eventData['organization_id'] ?? null;
+        if (!$organizationId) {
+            return;
+        }
+
+        $organization = User::query()
+            ->where('id', $organizationId)
+            ->where('role', 'organization')
+            ->first();
+        if (!$organization) {
+            return;
+        }
+
+        $updates = $this->buildOrganizationContactUpdatesFromEvent($organization, $eventData);
+        if (!empty($updates)) {
+            $organization->update($updates);
+        }
+    }
+
+    private function buildOrganizationContactUpdatesFromOffer(User $organization, array $offerData): array
+    {
+        $mapping = [
+            'address' => 'address',
+            'phone' => 'phone_number',
+            'facebook_url' => 'facebook_url',
+            'instagram_url' => 'instagram_url',
+            'website_url' => 'website_url',
+            'google_map_url' => 'google_map_url',
+        ];
+
+        $updates = [];
+        foreach ($mapping as $userColumn => $offerColumn) {
+            $currentValue = $organization->{$userColumn};
+            $incomingValue = $this->normalizeNullableString($offerData[$offerColumn] ?? null);
+            if ($incomingValue === null) {
+                continue;
+            }
+            if ($this->isBlankValue($currentValue)) {
+                $updates[$userColumn] = $incomingValue;
+            }
+        }
+
+        return $updates;
+    }
+
+    private function buildOrganizationContactUpdatesFromEvent(User $organization, array $eventData): array
+    {
+        $mapping = [
+            'address' => 'address',
+            'phone' => 'phone_number',
+            'facebook_url' => 'facebook_url',
+            'instagram_url' => 'instagram_url',
+        ];
+
+        $updates = [];
+        foreach ($mapping as $userColumn => $eventColumn) {
+            $currentValue = $organization->{$userColumn};
+            $incomingValue = $this->normalizeNullableString($eventData[$eventColumn] ?? null);
+            if ($incomingValue === null) {
+                continue;
+            }
+            if ($this->isBlankValue($currentValue)) {
+                $updates[$userColumn] = $incomingValue;
+            }
+        }
+
+        return $updates;
+    }
+
+    private function normalizeNullableString($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = trim((string) $value);
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function isBlankValue($value): bool
+    {
+        return $this->normalizeNullableString($value) === null;
+    }
+
     private function formatOrganization(User $user): array
     {
         return [
@@ -1694,6 +1820,15 @@ class AdminController extends Controller
             'business_type' => $user->business_type,
             'businessType' => $user->business_type,
             'phone' => $user->phone,
+            'address' => $user->address,
+            'facebook_url' => $user->facebook_url,
+            'facebookUrl' => $user->facebook_url,
+            'instagram_url' => $user->instagram_url,
+            'instagramUrl' => $user->instagram_url,
+            'website_url' => $user->website_url,
+            'websiteUrl' => $user->website_url,
+            'google_map_url' => $user->google_map_url,
+            'googleMapUrl' => $user->google_map_url,
             'created_at' => $user->created_at,
             'createdAt' => $user->created_at,
         ];
