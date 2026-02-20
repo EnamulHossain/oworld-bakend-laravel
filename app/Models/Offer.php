@@ -33,6 +33,7 @@ class Offer extends BaseModel
         'organization_id',
         'event_id',
         'area_id',
+        'area_ids',
         'offer_type',
         'sort_order',
         'status',
@@ -47,6 +48,7 @@ class Offer extends BaseModel
         'gallery_sort_order' => 'array',
         'videos' => 'array',
         'attributes' => 'array',
+        'area_ids' => 'array',
         'discount_value' => 'decimal:2',
     ];
 

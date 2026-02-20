@@ -22,6 +22,7 @@ class Event extends BaseModel
         'end_time',
         'location',
         'area_id',
+        'area_ids',
         'address',
         'phone_number',
         'facebook_url',
@@ -40,6 +41,7 @@ class Event extends BaseModel
         'banner' => 'array',
         'gallery_sort_order' => 'array',
         'attributes' => 'array',
+        'area_ids' => 'array',
     ];
 
     public function getBannerAttribute($value)

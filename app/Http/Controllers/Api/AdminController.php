@@ -20,6 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -374,6 +375,8 @@ class AdminController extends Controller
             'website_url' => ['nullable', 'string', 'max:500'],
             'google_map_url' => ['nullable', 'string', 'max:500'],
             'area_id' => ['nullable', 'exists:areas,id'],
+            'area_ids' => ['nullable', 'array'],
+            'area_ids.*' => ['integer', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
@@ -384,6 +387,7 @@ class AdminController extends Controller
             $data['sort_order'] = $data['serial'];
         }
 
+        $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
@@ -429,6 +433,8 @@ class AdminController extends Controller
             'website_url' => ['nullable', 'string', 'max:500'],
             'google_map_url' => ['nullable', 'string', 'max:500'],
             'area_id' => ['nullable', 'exists:areas,id'],
+            'area_ids' => ['nullable', 'array'],
+            'area_ids.*' => ['integer', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'organization_id' => ['nullable', 'exists:users,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
@@ -439,6 +445,7 @@ class AdminController extends Controller
             $data['sort_order'] = $data['serial'];
         }
 
+        $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
         if (array_key_exists('banner', $data)) {
@@ -556,6 +563,8 @@ class AdminController extends Controller
                 'organization_id' => ['required', 'exists:users,id'],
                 'event_id' => ['nullable', 'exists:events,id'],
                 'area_id' => ['nullable', 'exists:areas,id'],
+                'area_ids' => ['nullable', 'array'],
+                'area_ids.*' => ['integer', 'exists:areas,id'],
                 'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
@@ -566,6 +575,7 @@ class AdminController extends Controller
                 $data['sort_order'] = $data['serial'];
             }
 
+            $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
 
             $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
@@ -649,6 +659,8 @@ class AdminController extends Controller
                 'organization_id' => ['nullable', 'exists:users,id'],
                 'event_id' => ['nullable', 'exists:events,id'],
                 'area_id' => ['nullable', 'exists:areas,id'],
+                'area_ids' => ['nullable', 'array'],
+                'area_ids.*' => ['integer', 'exists:areas,id'],
                 'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
@@ -659,6 +671,7 @@ class AdminController extends Controller
                 $data['sort_order'] = $data['serial'];
             }
 
+            $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
 
             if (array_key_exists('images', $data)) {
@@ -1545,6 +1558,44 @@ class AdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function normalizeAreaSelection(array $data, string $table): array
+    {
+        $hasAreaIds = array_key_exists('area_ids', $data);
+        $hasAreaId = array_key_exists('area_id', $data);
+
+        if (!$hasAreaIds && !$hasAreaId) {
+            return $data;
+        }
+
+        $areaIds = [];
+        if ($hasAreaIds) {
+            $areaIds = collect((array) ($data['area_ids'] ?? []))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        if (empty($areaIds) && $hasAreaId && !empty($data['area_id'])) {
+            $singleId = (int) $data['area_id'];
+            if ($singleId > 0) {
+                $areaIds = [$singleId];
+            }
+        }
+
+        if (!Schema::hasColumn($table, 'area_ids')) {
+            unset($data['area_ids']);
+            $data['area_id'] = count($areaIds) > 0 ? $areaIds[0] : null;
+            return $data;
+        }
+
+        $data['area_ids'] = $areaIds;
+        $data['area_id'] = count($areaIds) > 0 ? $areaIds[0] : null;
+
+        return $data;
     }
 
     private function normalizeDateAndTimeFields(array $data, string $dateFieldPrefix): array
