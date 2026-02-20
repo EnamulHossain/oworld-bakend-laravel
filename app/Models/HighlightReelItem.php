@@ -19,6 +19,7 @@ class HighlightReelItem extends BaseModel
         'event_id',
         'organization_id',
         'image',
+        'video',
         'external_link',
         'sort_order',
         'is_active',

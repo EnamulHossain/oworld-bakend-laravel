@@ -855,6 +855,7 @@ class AdminController extends Controller
             'items.*.event_id' => ['nullable', 'exists:events,id'],
             'items.*.organization_id' => ['nullable', 'exists:users,id'],
             'items.*.image' => ['nullable', 'string', 'max:255'],
+            'items.*.video' => ['nullable', 'string', 'max:255'],
             'items.*.external_link' => ['nullable', 'string', 'max:500'],
             'items.*.sort_order' => ['nullable', 'integer'],
             'items.*.is_active' => ['nullable', 'boolean'],
@@ -907,6 +908,7 @@ class AdminController extends Controller
             'items.*.event_id' => ['nullable', 'exists:events,id'],
             'items.*.organization_id' => ['nullable', 'exists:users,id'],
             'items.*.image' => ['nullable', 'string', 'max:255'],
+            'items.*.video' => ['nullable', 'string', 'max:255'],
             'items.*.external_link' => ['nullable', 'string', 'max:500'],
             'items.*.sort_order' => ['nullable', 'integer'],
             'items.*.is_active' => ['nullable', 'boolean'],
@@ -995,6 +997,7 @@ class AdminController extends Controller
                 'event_id' => $eventId,
                 'organization_id' => $organizationId,
                 'image' => $item['image'] ?? null,
+                'video' => $item['video'] ?? null,
                 'external_link' => $item['external_link'] ?? null,
                 'sort_order' => $item['sort_order'] ?? 0,
                 'is_active' => $item['is_active'] ?? true,
@@ -1009,7 +1012,7 @@ class AdminController extends Controller
     public function uploadHighlightMedia(Request $request)
     {
         $request->validate([
-            'file' => ['required', 'file', 'mimetypes:image/*,video/*', 'max:20480'],
+            'file' => ['required', 'file', 'mimetypes:image/*,video/*,application/octet-stream', 'max:51200'],
         ]);
 
         $path = $request->file('file')->store('uploads/highlights', 'public');
