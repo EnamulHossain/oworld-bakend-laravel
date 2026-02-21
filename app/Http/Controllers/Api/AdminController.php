@@ -1449,10 +1449,31 @@ class AdminController extends Controller
             $attribute->save();
 
             if (array_key_exists('values', $data)) {
-                $attribute->values()->delete();
                 $values = $this->normalizeAttributeValues($data['values'] ?? []);
                 if (!empty($values)) {
-                    $attribute->values()->createMany($values);
+                    $existingValues = $attribute->values()->get();
+                    $existingByKey = $existingValues->keyBy(
+                        fn ($item) => $this->normalizeAttributeValueKey((string) ($item->value ?? ''))
+                    );
+                    $seen = [];
+
+                    foreach ($values as $valuePayload) {
+                        $key = $this->normalizeAttributeValueKey((string) ($valuePayload['value'] ?? ''));
+                        if ($key === '' || isset($seen[$key])) {
+                            continue;
+                        }
+                        $seen[$key] = true;
+
+                        $existing = $existingByKey->get($key);
+                        if ($existing) {
+                            $existing->update([
+                                'color_code' => $valuePayload['color_code'] ?? null,
+                            ]);
+                            continue;
+                        }
+
+                        $attribute->values()->create($valuePayload);
+                    }
                 }
             }
 
@@ -1724,6 +1745,17 @@ class AdminController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function normalizeAttributeValueKey(string $value): string
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '';
+        }
+        return function_exists('mb_strtolower')
+            ? mb_strtolower($trimmed, 'UTF-8')
+            : strtolower($trimmed);
     }
 
     private function normalizeAttributes($attributes): array
