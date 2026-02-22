@@ -1002,6 +1002,17 @@ class AdminController extends Controller
                 ]);
             }
 
+            $image = $this->normalizeNullableString($item['image'] ?? null);
+            $video = $this->normalizeNullableString($item['video'] ?? null);
+
+            if ($video === null && $image !== null && $this->looksLikeVideoMedia($image)) {
+                $video = $image;
+                $image = null;
+            }
+            if ($video !== null) {
+                $image = null;
+            }
+
             $normalized[] = [
                 'title' => $item['title'] ?? null,
                 'subtitle' => $item['subtitle'] ?? null,
@@ -1009,8 +1020,8 @@ class AdminController extends Controller
                 'offer_id' => $offerId,
                 'event_id' => $eventId,
                 'organization_id' => $organizationId,
-                'image' => $item['image'] ?? null,
-                'video' => $item['video'] ?? null,
+                'image' => $image,
+                'video' => $video,
                 'external_link' => $item['external_link'] ?? null,
                 'sort_order' => $item['sort_order'] ?? 0,
                 'is_active' => $item['is_active'] ?? true,
@@ -1020,6 +1031,15 @@ class AdminController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function looksLikeVideoMedia(string $value): bool
+    {
+        $parsedPath = parse_url($value, PHP_URL_PATH);
+        $candidate = is_string($parsedPath) ? $parsedPath : $value;
+        $normalized = strtolower($candidate);
+
+        return Str::endsWith($normalized, ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']);
     }
 
     public function uploadHighlightMedia(Request $request)
