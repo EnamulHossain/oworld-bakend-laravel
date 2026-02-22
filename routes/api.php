@@ -31,6 +31,7 @@ Route::get('public/content-blocks', [PublicController::class, 'contentBlocks']);
 Route::get('public/attributes', [PublicController::class, 'attributes']);
 Route::get('public/search', [PublicController::class, 'search']);
 Route::get('public/settings/{key}', [PublicController::class, 'setting']);
+Route::post('public/analytics/events', [PublicController::class, 'trackAnalyticsEvent'])->middleware('throttle:240,1');
 Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHighlight']);
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -55,6 +56,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::post('organizations', [AdminController::class, 'storeOrganization']);
     Route::put('organizations/{user}', [AdminController::class, 'updateOrganization']);
     Route::get('stats', [AdminController::class, 'stats']);
+    Route::get('analytics/clicks', [AdminController::class, 'analyticsClicks']);
 
     Route::get('categories', [AdminController::class, 'listCategories']);
     Route::post('categories', [AdminController::class, 'storeCategory']);

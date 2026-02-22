@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Area;
+use App\Models\AnalyticsEvent;
 use App\Models\Category;
 use App\Models\ContentBlock;
 use App\Models\Event;
@@ -14,6 +15,8 @@ use App\Models\Offer;
 use App\Models\Attribute;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class PublicController extends Controller
@@ -921,6 +924,61 @@ class PublicController extends Controller
         return response()->json([
             'success' => true,
             'results' => $categories->concat($events)->concat($offers)->values(),
+        ]);
+    }
+
+    public function trackAnalyticsEvent(Request $request)
+    {
+        $data = $request->validate([
+            'event_name' => ['required', 'string', 'max:120'],
+            'params' => ['nullable', 'array'],
+            'client_session_id' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $params = is_array($data['params'] ?? null) ? $data['params'] : [];
+        $metadata = Arr::except($params, [
+            'page',
+            'action',
+            'filter',
+            'channel',
+            'highlight_id',
+            'offer_id',
+            'event_id',
+            'organization_id',
+            'item_id',
+            'item_type',
+            'attribute_id',
+        ]);
+
+        $toNullableInt = static function ($value): ?int {
+            if ($value === null || $value === '') {
+                return null;
+            }
+            $parsed = filter_var($value, FILTER_VALIDATE_INT);
+            return $parsed !== false && $parsed > 0 ? $parsed : null;
+        };
+
+        $userId = Auth::guard('sanctum')->user()?->id ?? $request->user()?->id;
+
+        $event = AnalyticsEvent::create([
+            'event_name' => trim((string) $data['event_name']),
+            'page' => isset($params['page']) ? trim((string) $params['page']) : null,
+            'action' => isset($params['action']) ? trim((string) $params['action']) : null,
+            'filter' => isset($params['filter']) ? trim((string) $params['filter']) : null,
+            'channel' => isset($params['channel']) ? trim((string) $params['channel']) : null,
+            'highlight_id' => $toNullableInt($params['highlight_id'] ?? null),
+            'offer_id' => $toNullableInt($params['offer_id'] ?? $params['item_id'] ?? null),
+            'event_id' => $toNullableInt($params['event_id'] ?? null),
+            'organization_id' => $toNullableInt($params['organization_id'] ?? null),
+            'user_id' => $userId,
+            'client_session_id' => trim((string) ($data['client_session_id'] ?? '')) ?: null,
+            'metadata' => empty($metadata) ? null : $metadata,
+            'occurred_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'event_id' => $event->id,
         ]);
     }
 

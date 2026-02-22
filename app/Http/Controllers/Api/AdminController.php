@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Area;
+use App\Models\AnalyticsEvent;
 use App\Models\Attribute;
 use App\Models\Category;
 use App\Models\ContentBlock;
@@ -196,6 +197,102 @@ class AdminController extends Controller
                 'organizationCount' => User::where('role', 'organization')->count(),
                 'userCount' => User::where('role', 'user')->count(),
             ],
+        ]);
+    }
+
+    public function analyticsClicks(Request $request)
+    {
+        $data = $request->validate([
+            'days' => ['nullable', 'integer', 'min:1', 'max:180'],
+        ]);
+
+        $days = (int) ($data['days'] ?? 30);
+        $startAt = now()->subDays($days)->startOfDay();
+
+        $query = AnalyticsEvent::query()
+            ->whereIn('event_name', ['highlight_click', 'filter_click', 'filter_apply'])
+            ->where('occurred_at', '>=', $startAt);
+
+        $totals = [
+            'tracked_events' => (clone $query)->count(),
+            'highlight_clicks' => (clone $query)->where('event_name', 'highlight_click')->count(),
+            'filter_clicks' => (clone $query)->where('event_name', 'filter_click')->count(),
+            'filter_applies' => (clone $query)->where('event_name', 'filter_apply')->count(),
+        ];
+
+        $byPage = (clone $query)
+            ->select('page', DB::raw('COUNT(*) as total'))
+            ->groupBy('page')
+            ->orderByDesc('total')
+            ->limit(10)
+            ->get()
+            ->map(fn ($row) => [
+                'page' => $row->page ?: 'unknown',
+                'total' => (int) $row->total,
+            ])->values();
+
+        $highlightActions = AnalyticsEvent::query()
+            ->where('event_name', 'highlight_click')
+            ->where('occurred_at', '>=', $startAt)
+            ->select('action', DB::raw('COUNT(*) as total'))
+            ->groupBy('action')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($row) => [
+                'action' => $row->action ?: 'unknown',
+                'total' => (int) $row->total,
+            ])->values();
+
+        $filterActions = AnalyticsEvent::query()
+            ->where('event_name', 'filter_click')
+            ->where('occurred_at', '>=', $startAt)
+            ->select('filter', 'action', DB::raw('COUNT(*) as total'))
+            ->groupBy('filter', 'action')
+            ->orderByDesc('total')
+            ->limit(50)
+            ->get()
+            ->map(fn ($row) => [
+                'filter' => $row->filter ?: 'unknown',
+                'action' => $row->action ?: 'unknown',
+                'total' => (int) $row->total,
+            ])->values();
+
+        $daily = (clone $query)
+            ->select(DB::raw('DATE(occurred_at) as day'), DB::raw('COUNT(*) as total'))
+            ->groupBy(DB::raw('DATE(occurred_at)'))
+            ->orderBy(DB::raw('DATE(occurred_at)'))
+            ->get()
+            ->map(fn ($row) => [
+                'day' => (string) $row->day,
+                'total' => (int) $row->total,
+            ])->values();
+
+        $recent = (clone $query)
+            ->select([
+                'id',
+                'event_name',
+                'page',
+                'action',
+                'filter',
+                'highlight_id',
+                'offer_id',
+                'event_id',
+                'organization_id',
+                'occurred_at',
+            ])
+            ->latest('occurred_at')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'window_days' => $days,
+            'totals' => $totals,
+            'by_page' => $byPage,
+            'highlight_actions' => $highlightActions,
+            'filter_actions' => $filterActions,
+            'daily' => $daily,
+            'recent' => $recent,
         ]);
     }
 
