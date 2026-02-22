@@ -1142,7 +1142,7 @@ class AdminController extends Controller
     public function uploadHighlightMedia(Request $request)
     {
         $request->validate([
-            'file' => ['required', 'file', 'mimetypes:image/*,video/*,application/octet-stream', 'max:51200'],
+            'file' => ['required', 'file', 'mimetypes:image/*,video/*,application/octet-stream', 'max:153600'],
         ]);
 
         $path = $request->file('file')->store('uploads/highlights', 'public');
