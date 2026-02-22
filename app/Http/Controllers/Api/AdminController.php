@@ -868,6 +868,7 @@ class AdminController extends Controller
             'items.*.event_id' => ['nullable', 'exists:events,id'],
             'items.*.organization_id' => ['nullable', 'exists:users,id'],
             'items.*.image' => ['nullable', 'string', 'max:255'],
+            'items.*.video' => ['nullable', 'string', 'max:255'],
             'items.*.external_link' => ['nullable', 'string', 'max:500'],
             'items.*.sort_order' => ['nullable', 'integer'],
             'items.*.is_active' => ['nullable', 'boolean'],
@@ -920,6 +921,7 @@ class AdminController extends Controller
             'items.*.event_id' => ['nullable', 'exists:events,id'],
             'items.*.organization_id' => ['nullable', 'exists:users,id'],
             'items.*.image' => ['nullable', 'string', 'max:255'],
+            'items.*.video' => ['nullable', 'string', 'max:255'],
             'items.*.external_link' => ['nullable', 'string', 'max:500'],
             'items.*.sort_order' => ['nullable', 'integer'],
             'items.*.is_active' => ['nullable', 'boolean'],
@@ -1000,6 +1002,17 @@ class AdminController extends Controller
                 ]);
             }
 
+            $image = $this->normalizeNullableString($item['image'] ?? null);
+            $video = $this->normalizeNullableString($item['video'] ?? null);
+
+            if ($video === null && $image !== null && $this->looksLikeVideoMedia($image)) {
+                $video = $image;
+                $image = null;
+            }
+            if ($video !== null) {
+                $image = null;
+            }
+
             $normalized[] = [
                 'title' => $item['title'] ?? null,
                 'subtitle' => $item['subtitle'] ?? null,
@@ -1007,7 +1020,8 @@ class AdminController extends Controller
                 'offer_id' => $offerId,
                 'event_id' => $eventId,
                 'organization_id' => $organizationId,
-                'image' => $item['image'] ?? null,
+                'image' => $image,
+                'video' => $video,
                 'external_link' => $item['external_link'] ?? null,
                 'sort_order' => $item['sort_order'] ?? 0,
                 'is_active' => $item['is_active'] ?? true,
@@ -1019,10 +1033,19 @@ class AdminController extends Controller
         return $normalized;
     }
 
+    private function looksLikeVideoMedia(string $value): bool
+    {
+        $parsedPath = parse_url($value, PHP_URL_PATH);
+        $candidate = is_string($parsedPath) ? $parsedPath : $value;
+        $normalized = strtolower($candidate);
+
+        return Str::endsWith($normalized, ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']);
+    }
+
     public function uploadHighlightMedia(Request $request)
     {
         $request->validate([
-            'file' => ['required', 'file', 'mimetypes:image/*,video/*', 'max:20480'],
+            'file' => ['required', 'file', 'mimetypes:image/*,video/*,application/octet-stream', 'max:51200'],
         ]);
 
         $path = $request->file('file')->store('uploads/highlights', 'public');
