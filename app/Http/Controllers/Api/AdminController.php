@@ -31,6 +31,11 @@ class AdminController extends Controller
 {
     public function users(Request $request)
     {
+        $columns = ['id', 'username', 'email', 'role', 'organization_name', 'created_at'];
+        if (Schema::hasColumn('users', 'status')) {
+            $columns[] = 'status';
+        }
+
         $users = User::query()
             ->when($request->query('role'), fn ($q, $role) => $q->where('role', $role))
             ->when($request->query('search'), function ($q, $term) {
@@ -40,7 +45,7 @@ class AdminController extends Controller
                 });
             })
             ->orderByDesc('created_at')
-            ->get(['id', 'username', 'email', 'role', 'organization_name', 'created_at']);
+            ->get($columns);
 
         return response()->json(['success' => true, 'users' => $users]);
     }
@@ -48,11 +53,119 @@ class AdminController extends Controller
     public function updateUserRole(Request $request, User $user)
     {
         $data = $request->validate([
-            'role' => ['required', Rule::in(['user', 'organization', 'admin'])],
+            'role' => ['required', Rule::in(['user', 'organization', 'admin', 'superAdmin'])],
         ]);
+
+        if ($data['role'] === 'superAdmin' && !$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can assign super admin role.'], 403);
+        }
+
+        if ($user->role === 'superAdmin' && !$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can modify this user.'], 403);
+        }
 
         $user->update(['role' => $data['role']]);
         $user->syncRoles([$data['role']]);
+
+        return response()->json(['success' => true, 'user' => $user]);
+    }
+
+    public function admins(Request $request)
+    {
+        $columns = ['id', 'username', 'email', 'role', 'created_at'];
+        if (Schema::hasColumn('users', 'status')) {
+            $columns[] = 'status';
+        }
+
+        $admins = User::query()
+            ->whereIn('role', ['admin', 'superAdmin'])
+            ->when($request->query('search'), function ($q, $term) {
+                $q->where(function ($inner) use ($term) {
+                    $inner->where('username', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%");
+                });
+            })
+            ->orderByDesc('created_at')
+            ->get($columns);
+
+        return response()->json(['success' => true, 'admins' => $admins]);
+    }
+
+    public function assignAdmin(Request $request, User $user)
+    {
+        if (!$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can assign admin users.'], 403);
+        }
+
+        $result = $this->promoteUserToAdmin($user);
+        if ($result !== true) {
+            return response()->json(['error' => $result], 422);
+        }
+
+        return response()->json(['success' => true, 'user' => $user]);
+    }
+
+    public function assignAdminsBulk(Request $request)
+    {
+        if (!$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can assign admin users.'], 403);
+        }
+
+        $data = $request->validate([
+            'user_ids' => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+        ]);
+
+        $users = User::query()
+            ->whereIn('id', $data['user_ids'])
+            ->get();
+
+        $updated = [];
+        $failed = [];
+
+        foreach ($users as $user) {
+            $result = $this->promoteUserToAdmin($user);
+            if ($result === true) {
+                $updated[] = $user->id;
+                continue;
+            }
+
+            $failed[] = [
+                'user_id' => $user->id,
+                'message' => $result,
+            ];
+        }
+
+        return response()->json([
+            'success' => count($failed) === 0,
+            'updated_user_ids' => $updated,
+            'failed' => $failed,
+        ]);
+    }
+
+    public function updateAdminStatus(Request $request, User $user)
+    {
+        if (!$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can update admin status.'], 403);
+        }
+
+        if (!in_array($user->role, ['admin', 'superAdmin'], true)) {
+            return response()->json(['error' => 'Target user is not an admin.'], 422);
+        }
+
+        if ($user->role === 'superAdmin') {
+            return response()->json(['error' => 'Super admin status cannot be changed.'], 422);
+        }
+
+        if (!Schema::hasColumn('users', 'status')) {
+            return response()->json(['error' => 'User status column is missing.'], 422);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['active', 'inactive'])],
+        ]);
+
+        $user->update(['status' => $data['status']]);
 
         return response()->json(['success' => true, 'user' => $user]);
     }
@@ -2010,6 +2123,29 @@ class AdminController extends Controller
     private function isBlankValue($value): bool
     {
         return $this->normalizeNullableString($value) === null;
+    }
+
+    private function isSuperAdmin(Request $request): bool
+    {
+        return strtolower((string) ($request->user()?->role ?? '')) === 'superadmin';
+    }
+
+    private function promoteUserToAdmin(User $user): true|string
+    {
+        if (!in_array($user->role, ['user', 'organization', 'admin'], true)) {
+            return 'Only user or organization accounts can be assigned as admin.';
+        }
+
+        $updates = ['role' => 'admin'];
+        if (Schema::hasColumn('users', 'status')) {
+            $updates['status'] = 'active';
+        }
+
+        $user->update($updates);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'sanctum']);
+        $user->syncRoles(['admin']);
+
+        return true;
     }
 
     private function formatOrganization(User $user): array

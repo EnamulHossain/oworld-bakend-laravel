@@ -80,6 +80,14 @@ class AuthController extends Controller
         if (!$user || !Hash::check($data['password'], $user->password)) {
             return response()->json(['error' => 'Invalid email or password.'], 401);
         }
+        if (($user->status ?? 'active') !== 'active') {
+            return response()->json(['error' => 'Your account is inactive. Please contact support.'], 403);
+        }
+
+        Role::firstOrCreate(['name' => $user->role, 'guard_name' => 'sanctum']);
+        if (!$user->hasRole($user->role)) {
+            $user->syncRoles([$user->role]);
+        }
 
         $token = $user->createToken('api')->plainTextToken;
 
@@ -221,8 +229,19 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
+        if (($request->user()->status ?? 'active') !== 'active') {
+            $request->user()->currentAccessToken()?->delete();
+            return response()->json(['error' => 'Your account is inactive.'], 403);
+        }
+
+        $user = $request->user();
+        Role::firstOrCreate(['name' => $user->role, 'guard_name' => 'sanctum']);
+        if (!$user->hasRole($user->role)) {
+            $user->syncRoles([$user->role]);
+        }
+
         return response()->json([
-            'user' => $this->formatUser($request->user()),
+            'user' => $this->formatUser($user),
         ]);
     }
 

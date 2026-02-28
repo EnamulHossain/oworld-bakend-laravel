@@ -25,6 +25,7 @@ class User extends BaseAuthenticatable
         'email',
         'password',
         'role',
+        'status',
         'organization_name',
         'business_type',
         'phone',

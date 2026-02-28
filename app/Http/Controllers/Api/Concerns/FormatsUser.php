@@ -30,6 +30,7 @@ trait FormatsUser
             'about' => $user->about,
             'email' => $user->email,
             'role' => $user->role,
+            'status' => $user->status ?? 'active',
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
             'phone' => $user->phone,

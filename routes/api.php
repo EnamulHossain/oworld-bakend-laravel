@@ -48,9 +48,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('highlights/{highlight}/react', [PublicController::class, 'reactToHighlight']);
 });
 
-Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->group(function () {
     Route::get('users', [AdminController::class, 'users']);
     Route::patch('users/{user}/role', [AdminController::class, 'updateUserRole']);
+    Route::get('admins', [AdminController::class, 'admins']);
+    Route::post('admins/assign-bulk', [AdminController::class, 'assignAdminsBulk']);
+    Route::post('admins/{user}/assign', [AdminController::class, 'assignAdmin']);
+    Route::patch('admins/{user}/status', [AdminController::class, 'updateAdminStatus']);
     Route::delete('users/{user}', [AdminController::class, 'deleteUser']);
     Route::get('organizations', [AdminController::class, 'organizations']);
     Route::post('organizations', [AdminController::class, 'storeOrganization']);
