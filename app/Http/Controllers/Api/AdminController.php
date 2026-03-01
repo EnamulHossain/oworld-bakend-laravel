@@ -532,7 +532,12 @@ class AdminController extends Controller
     public function listEvents(Request $request)
     {
         $query = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with([
+                'organization:id,organization_name,username,phone',
+                'category:id,name',
+                'area:id,name',
+                'creator:id,username,full_name',
+            ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
@@ -709,7 +714,12 @@ class AdminController extends Controller
     public function listOffers(Request $request)
     {
         $query = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with([
+                'organization:id,organization_name,username,phone',
+                'category:id,name',
+                'area:id,name',
+                'creator:id,username,full_name',
+            ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
