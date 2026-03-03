@@ -305,7 +305,7 @@ class FrontendController extends Controller
     private function siteSettings(): array
     {
         $settings = SystemSetting::query()
-            ->whereIn('key', ['site_title', 'tagline', 'logo', 'contact_email'])
+            ->whereIn('key', ['site_title', 'tagline', 'logo', 'favicon', 'contact_email'])
             ->where('is_active', true)
             ->get()
             ->pluck('value', 'key')
@@ -325,6 +325,7 @@ class FrontendController extends Controller
             'siteTitle' => $value('site_title', 'oWorld'),
             'tagline' => $value('tagline', 'Local experiences, curated offers, and cultural insights.'),
             'logo' => $this->resolveMedia($value('logo')),
+            'favicon' => $this->resolveMedia($value('favicon')),
             'contactEmail' => $value('contact_email'),
         ];
     }
