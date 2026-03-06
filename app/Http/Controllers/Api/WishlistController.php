@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\Offer;
 use App\Models\WishlistItem;
 use Illuminate\Http\Request;
+use Illuminate\Database\QueryException;
 use Illuminate\Validation\Rule;
 
 class WishlistController extends Controller
@@ -62,18 +63,57 @@ class WishlistController extends Controller
             return response()->json(['error' => 'Item not found or not available.'], 404);
         }
 
-        $wishlistItem = WishlistItem::firstOrCreate([
-            'user_id' => $request->user()->id,
-            'item_type' => $data['item_type'],
-            'item_id' => $data['item_id'],
-        ]);
-
         $events = $data['item_type'] === 'event'
             ? collect([$resolvedItem])->keyBy('id')
             : collect();
         $offers = $data['item_type'] === 'offer'
             ? collect([$resolvedItem])->keyBy('id')
             : collect();
+
+        $existingWishlistItem = WishlistItem::withTrashed()
+            ->where('user_id', $request->user()->id)
+            ->where('item_type', $data['item_type'])
+            ->where('item_id', $data['item_id'])
+            ->first();
+
+        if ($existingWishlistItem) {
+            if ($existingWishlistItem->trashed()) {
+                $existingWishlistItem->restore();
+
+                return response()->json([
+                    'message' => 'Added to wishlist.',
+                    'item' => $this->formatWishlistItem($existingWishlistItem->fresh(), $events, $offers),
+                ], 200);
+            }
+
+            return response()->json([
+                'message' => 'Item already saved.',
+                'item' => $this->formatWishlistItem($existingWishlistItem, $events, $offers),
+            ], 200);
+        }
+
+        try {
+            $wishlistItem = WishlistItem::firstOrCreate([
+                'user_id' => $request->user()->id,
+                'item_type' => $data['item_type'],
+                'item_id' => $data['item_id'],
+            ]);
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateWishlistInsert($exception)) {
+                $wishlistItem = WishlistItem::query()
+                    ->where('user_id', $request->user()->id)
+                    ->where('item_type', $data['item_type'])
+                    ->where('item_id', $data['item_id'])
+                    ->first();
+
+                return response()->json([
+                    'message' => 'Item already saved.',
+                    'item' => $wishlistItem ? $this->formatWishlistItem($wishlistItem, $events, $offers) : null,
+                ], 200);
+            }
+
+            throw $exception;
+        }
 
         return response()->json([
             'message' => $wishlistItem->wasRecentlyCreated ? 'Added to wishlist.' : 'Item already saved.',
@@ -89,10 +129,11 @@ class WishlistController extends Controller
         ]);
 
         $deleted = WishlistItem::query()
+            ->withTrashed()
             ->where('user_id', $request->user()->id)
             ->where('item_type', $data['item_type'])
             ->where('item_id', $data['item_id'])
-            ->delete();
+            ->forceDelete();
 
         return response()->json([
             'message' => $deleted ? 'Removed from wishlist.' : 'Item was not in wishlist.',
@@ -177,5 +218,13 @@ class WishlistController extends Controller
             ] : null,
             'type' => 'offer',
         ];
+    }
+
+    private function isDuplicateWishlistInsert(QueryException $exception): bool
+    {
+        $sqlState = $exception->errorInfo[0] ?? null;
+        $driverCode = $exception->errorInfo[1] ?? null;
+
+        return $sqlState === '23000' && (int) $driverCode === 1062;
     }
 }
