@@ -8,7 +8,7 @@ class CouponDetail extends BaseModel
 {
     use HasFactory;
 
-    protected $table = 'coouponn_details';
+    protected $table = 'coupon_details';
 
     protected $fillable = [
         'coupon_id',

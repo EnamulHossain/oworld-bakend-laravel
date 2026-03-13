@@ -323,12 +323,13 @@ class AdminController extends Controller
         $startAt = now()->subDays($days)->startOfDay();
 
         $query = AnalyticsEvent::query()
-            ->whereIn('event_name', ['highlight_click', 'filter_click', 'filter_apply'])
+            ->whereIn('event_name', ['highlight_click', 'highlight_item_open', 'filter_click', 'filter_apply'])
             ->where('occurred_at', '>=', $startAt);
 
         $totals = [
             'tracked_events' => (clone $query)->count(),
             'highlight_clicks' => (clone $query)->where('event_name', 'highlight_click')->count(),
+            'highlight_opens' => (clone $query)->where('event_name', 'highlight_item_open')->count(),
             'filter_clicks' => (clone $query)->where('event_name', 'filter_click')->count(),
             'filter_applies' => (clone $query)->where('event_name', 'filter_apply')->count(),
         ];
@@ -344,31 +345,150 @@ class AdminController extends Controller
                 'total' => (int) $row->total,
             ])->values();
 
-        $highlightActions = AnalyticsEvent::query()
-            ->where('event_name', 'highlight_click')
+        $highlightEvents = AnalyticsEvent::query()
+            ->whereIn('event_name', ['highlight_click', 'highlight_item_open'])
             ->where('occurred_at', '>=', $startAt)
-            ->select('action', DB::raw('COUNT(*) as total'))
-            ->groupBy('action')
-            ->orderByDesc('total')
-            ->get()
-            ->map(fn ($row) => [
-                'action' => $row->action ?: 'unknown',
-                'total' => (int) $row->total,
-            ])->values();
+            ->get([
+                'id',
+                'event_name',
+                'page',
+                'action',
+                'highlight_id',
+                'offer_id',
+                'event_id',
+                'organization_id',
+                'metadata',
+                'occurred_at',
+            ]);
 
-        $filterActions = AnalyticsEvent::query()
-            ->where('event_name', 'filter_click')
+        $highlightActions = $highlightEvents
+            ->groupBy(function ($row) {
+                if ($row->event_name === 'highlight_item_open') {
+                    return 'open';
+                }
+
+                return $row->action ?: 'unknown';
+            })
+            ->map(fn ($rows, $action) => [
+                'action' => $action,
+                'total' => $rows->count(),
+            ])
+            ->sortByDesc('total')
+            ->values();
+
+        $highlightClicksByItem = $highlightEvents
+            ->filter(fn ($row) => $row->event_name === 'highlight_click')
+            ->groupBy(function ($row) {
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+                return implode('|', [
+                    $row->action ?: 'click',
+                    (string) ($row->highlight_id ?? ''),
+                    (string) ($row->offer_id ?? ''),
+                    (string) ($row->event_id ?? ''),
+                    (string) ($row->organization_id ?? ''),
+                    (string) data_get($metadata, 'item_title', ''),
+                ]);
+            })
+            ->map(function ($rows) {
+                $row = $rows->first();
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+
+                return [
+                    'action' => $row->action ?: 'click',
+                    'highlight_id' => $row->highlight_id,
+                    'highlight_title' => data_get($metadata, 'highlight_title') ?: 'Highlight',
+                    'item_title' => data_get($metadata, 'item_title') ?: 'Unknown item',
+                    'offer_id' => $row->offer_id,
+                    'event_id' => $row->event_id,
+                    'organization_id' => $row->organization_id,
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(15)
+            ->values();
+
+        $highlightOpensByItem = $highlightEvents
+            ->filter(fn ($row) => $row->event_name === 'highlight_item_open')
+            ->groupBy(function ($row) {
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+                return implode('|', [
+                    (string) ($row->highlight_id ?? ''),
+                    (string) ($row->offer_id ?? ''),
+                    (string) ($row->event_id ?? ''),
+                    (string) ($row->organization_id ?? ''),
+                    (string) data_get($metadata, 'item_title', ''),
+                    (string) data_get($metadata, 'item_index', ''),
+                ]);
+            })
+            ->map(function ($rows) {
+                $row = $rows->first();
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+
+                return [
+                    'highlight_id' => $row->highlight_id,
+                    'highlight_title' => data_get($metadata, 'highlight_title') ?: 'Highlight',
+                    'item_title' => data_get($metadata, 'item_title') ?: 'Unknown item',
+                    'item_index' => data_get($metadata, 'item_index'),
+                    'offer_id' => $row->offer_id,
+                    'event_id' => $row->event_id,
+                    'organization_id' => $row->organization_id,
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(15)
+            ->values();
+
+        $filterEvents = AnalyticsEvent::query()
+            ->whereIn('event_name', ['filter_click', 'filter_apply'])
             ->where('occurred_at', '>=', $startAt)
-            ->select('filter', 'action', DB::raw('COUNT(*) as total'))
-            ->groupBy('filter', 'action')
-            ->orderByDesc('total')
-            ->limit(50)
             ->get()
-            ->map(fn ($row) => [
-                'filter' => $row->filter ?: 'unknown',
-                'action' => $row->action ?: 'unknown',
-                'total' => (int) $row->total,
-            ])->values();
+            ->map(function ($row) {
+                $row->metadata = is_array($row->metadata) ? $row->metadata : [];
+                return $row;
+            });
+
+        $filterActions = $filterEvents
+            ->filter(fn ($row) => $row->event_name === 'filter_click')
+            ->groupBy(fn ($row) => implode('|', [$row->filter ?: 'unknown', $row->action ?: 'unknown']))
+            ->map(function ($rows) {
+                $row = $rows->first();
+                return [
+                    'filter' => $row->filter ?: 'unknown',
+                    'action' => $row->action ?: 'unknown',
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(50)
+            ->values();
+
+        $filterDetails = $filterEvents
+            ->groupBy(function ($row) {
+                return implode('|', [
+                    $row->event_name ?: 'unknown',
+                    $row->filter ?: 'unknown',
+                    $row->action ?: 'unknown',
+                    (string) data_get($row->metadata, 'attribute_name', ''),
+                    (string) data_get($row->metadata, 'filter_value', ''),
+                ]);
+            })
+            ->map(function ($rows) {
+                $row = $rows->first();
+                return [
+                    'event_name' => $row->event_name ?: 'unknown',
+                    'filter' => $row->filter ?: 'unknown',
+                    'filter_label' => data_get($row->metadata, 'filter_label') ?: ($row->filter ?: 'unknown'),
+                    'action' => $row->action ?: ($row->event_name === 'filter_apply' ? 'apply' : 'unknown'),
+                    'attribute_name' => data_get($row->metadata, 'attribute_name'),
+                    'filter_value' => data_get($row->metadata, 'filter_value'),
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(20)
+            ->values();
 
         $daily = (clone $query)
             ->select(DB::raw('DATE(occurred_at) as day'), DB::raw('COUNT(*) as total'))
@@ -391,6 +511,7 @@ class AdminController extends Controller
                 'offer_id',
                 'event_id',
                 'organization_id',
+                'metadata',
                 'occurred_at',
             ])
             ->latest('occurred_at')
@@ -403,7 +524,10 @@ class AdminController extends Controller
             'totals' => $totals,
             'by_page' => $byPage,
             'highlight_actions' => $highlightActions,
+            'highlight_click_items' => $highlightClicksByItem,
+            'highlight_open_items' => $highlightOpensByItem,
             'filter_actions' => $filterActions,
+            'filter_details' => $filterDetails,
             'daily' => $daily,
             'recent' => $recent,
         ]);
@@ -968,6 +1092,7 @@ class AdminController extends Controller
         $query = Coupon::query()
             ->with([
                 'organization:id,organization_name,username',
+                'details:id,coupon_id,offer_id,event_id,organization_id',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
@@ -979,10 +1104,13 @@ class AdminController extends Controller
             ->orderByDesc('id');
 
         $coupons = $query->paginate((int) $request->query('limit', 50));
+        $items = collect($coupons->items())
+            ->map(fn (Coupon $coupon) => $this->formatCouponForResponse($coupon))
+            ->values();
 
         return response()->json([
             'success' => true,
-            'coupons' => $coupons->items(),
+            'coupons' => $items,
             'pagination' => [
                 'total' => $coupons->total(),
                 'per_page' => $coupons->perPage(),
@@ -1044,16 +1172,40 @@ class AdminController extends Controller
             }
 
             return Coupon::query()
-                ->with(['organization:id,organization_name,username'])
+                ->with([
+                    'organization:id,organization_name,username',
+                    'details:id,coupon_id,offer_id,event_id,organization_id',
+                ])
                 ->where('id', $master->id)
                 ->get();
         });
+        $responseCoupons = $createdCoupons
+            ->map(fn (Coupon $coupon) => $this->formatCouponForResponse($coupon))
+            ->values();
 
         return response()->json([
             'success' => true,
-            'created_count' => $createdCoupons->count(),
-            'coupons' => $createdCoupons->values(),
+            'created_count' => $responseCoupons->count(),
+            'coupons' => $responseCoupons,
         ], 201);
+    }
+
+    private function formatCouponForResponse(Coupon $coupon): array
+    {
+        $firstDetail = $coupon->details->first();
+        $data = $coupon->toArray();
+        unset($data['details']);
+
+        $data['coupon_name'] = $coupon->name;
+        $data['coupon_no'] = (int) ($coupon->total_coupon ?? 1);
+        $data['offer_id'] = $firstDetail?->offer_id;
+        $data['event_id'] = $firstDetail?->event_id;
+
+        if (empty($data['organization_id']) && $firstDetail?->organization_id) {
+            $data['organization_id'] = $firstDetail->organization_id;
+        }
+
+        return $data;
     }
 
     public function listHighlights()
