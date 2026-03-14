@@ -11,6 +11,7 @@ class Attribute extends BaseModel
     protected $fillable = [
         'name',
         'type',
+        'category_id',
         'sort_order',
         'status',
     ];
@@ -23,5 +24,10 @@ class Attribute extends BaseModel
     public function categories()
     {
         return $this->belongsToMany(Category::class, 'attribute_category')->withTimestamps();
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
     }
 }

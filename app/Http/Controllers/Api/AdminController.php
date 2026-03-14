@@ -1760,7 +1760,7 @@ class AdminController extends Controller
             ->with(['values' => fn ($q) => $q->orderBy('id')]);
 
         if ($request->boolean('with_categories')) {
-            $query->with(['categories:id,name']);
+            $query->with(['category:id,name']);
         }
 
         if ($request->query('search')) {
@@ -1771,11 +1771,16 @@ class AdminController extends Controller
         if ($request->query('type')) {
             $query->where('type', $request->query('type'));
         }
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->query('category_id'));
+        }
         if ($request->query('status')) {
             $query->where('status', $request->query('status'));
         }
 
         $attributes = $query
+            ->orderByRaw('category_id IS NULL')
+            ->orderBy('category_id')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->orderBy('id')
@@ -1792,17 +1797,19 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'draft', 'inactive'])],
             'values' => ['nullable', 'array'],
-            'category_ids' => ['nullable', 'array'],
-            'category_ids.*' => ['integer', 'exists:categories,id'],
         ]);
 
         return DB::transaction(function () use ($data) {
+            $type = $data['type'];
+            $categoryId = $type === 'offer' ? ($data['category_id'] ?? null) : null;
             $attribute = Attribute::create([
                 'name' => $data['name'],
-                'type' => $data['type'],
+                'type' => $type,
+                'category_id' => $categoryId,
                 'sort_order' => (int) ($data['sort_order'] ?? 0),
                 'status' => $data['status'] ?? 'active',
             ]);
@@ -1812,11 +1819,10 @@ class AdminController extends Controller
                 $attribute->values()->createMany($values);
             }
 
-            if (!empty($data['category_ids'])) {
-                $attribute->categories()->sync($data['category_ids']);
-            }
-
-            $attribute->load(['values' => fn ($q) => $q->orderBy('id')]);
+            $attribute->load([
+                'values' => fn ($q) => $q->orderBy('id'),
+                'category:id,name',
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -1830,11 +1836,10 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'status' => ['sometimes', Rule::in(['active', 'draft', 'inactive'])],
             'values' => ['nullable', 'array'],
-            'category_ids' => ['nullable', 'array'],
-            'category_ids.*' => ['integer', 'exists:categories,id'],
         ]);
 
         return DB::transaction(function () use ($data, $attribute) {
@@ -1843,6 +1848,12 @@ class AdminController extends Controller
             }
             if (array_key_exists('type', $data)) {
                 $attribute->type = $data['type'];
+            }
+            if (array_key_exists('category_id', $data)) {
+                $attribute->category_id = $data['category_id'];
+            }
+            if (($attribute->type ?? 'event') !== 'offer') {
+                $attribute->category_id = null;
             }
             if (array_key_exists('sort_order', $data)) {
                 $attribute->sort_order = (int) ($data['sort_order'] ?? 0);
@@ -1881,11 +1892,10 @@ class AdminController extends Controller
                 }
             }
 
-            if (array_key_exists('category_ids', $data)) {
-                $attribute->categories()->sync($data['category_ids'] ?? []);
-            }
-
-            $attribute->load(['values' => fn ($q) => $q->orderBy('id')]);
+            $attribute->load([
+                'values' => fn ($q) => $q->orderBy('id'),
+                'category:id,name',
+            ]);
 
             return response()->json([
                 'success' => true,

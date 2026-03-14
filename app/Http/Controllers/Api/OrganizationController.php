@@ -54,6 +54,9 @@ class OrganizationController extends Controller
         if ($request->query('type')) {
             $query->where('type', $request->query('type'));
         }
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->query('category_id'));
+        }
 
         $attributes = $query
             ->orderBy('sort_order')
