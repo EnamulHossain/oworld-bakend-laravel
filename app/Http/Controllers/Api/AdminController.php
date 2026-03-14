@@ -556,6 +556,7 @@ class AdminController extends Controller
             ->when($request->query('search'), function ($q, $term) {
                 $q->where('name', 'like', "%{$term}%");
             })
+            ->orderBy('order')
             ->orderBy('name')
             ->get();
 
@@ -566,6 +567,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:150', 'unique:areas,name'],
+            'order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $name = trim($data['name']);
@@ -573,7 +575,10 @@ class AdminController extends Controller
             return response()->json(['error' => 'Area name is required.'], 422);
         }
 
-        $area = Area::create(['name' => $name]);
+        $area = Area::create([
+            'name' => $name,
+            'order' => (int) ($data['order'] ?? 0),
+        ]);
 
         return response()->json(['success' => true, 'area' => $area], 201);
     }
@@ -582,6 +587,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:150', Rule::unique('areas', 'name')->ignore($area->id)],
+            'order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $name = trim($data['name']);
@@ -589,7 +595,10 @@ class AdminController extends Controller
             return response()->json(['error' => 'Area name is required.'], 422);
         }
 
-        $area->update(['name' => $name]);
+        $area->update([
+            'name' => $name,
+            'order' => (int) ($data['order'] ?? 0),
+        ]);
 
         return response()->json(['success' => true, 'area' => $area]);
     }

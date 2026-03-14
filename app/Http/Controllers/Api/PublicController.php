@@ -38,8 +38,9 @@ class PublicController extends Controller
     public function areas()
     {
         $areas = Area::query()
+            ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'order']);
 
         return response()->json([
             'success' => true,

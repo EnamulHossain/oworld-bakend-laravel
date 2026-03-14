@@ -10,5 +10,6 @@ class Area extends BaseModel
 
     protected $fillable = [
         'name',
+        'order',
     ];
 }
