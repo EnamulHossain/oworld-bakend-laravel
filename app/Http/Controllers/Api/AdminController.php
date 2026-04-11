@@ -361,6 +361,22 @@ class AdminController extends Controller
                 'occurred_at',
             ]);
 
+        $stringOrNull = static function ($value): ?string {
+            if ($value === null) {
+                return null;
+            }
+
+            $normalized = trim((string) $value);
+            return $normalized !== '' ? $normalized : null;
+        };
+
+        $resolveHighlightTitle = static function ($row, array $metadata) use ($stringOrNull): string {
+            return $stringOrNull(data_get($metadata, 'item_title'))
+                ?? $stringOrNull(data_get($metadata, 'item_subtitle'))
+                ?? $stringOrNull(data_get($metadata, 'highlight_title'))
+                ?? 'Unknown item';
+        };
+
         $highlightActions = $highlightEvents
             ->groupBy(function ($row) {
                 if ($row->event_name === 'highlight_item_open') {
@@ -387,17 +403,26 @@ class AdminController extends Controller
                     (string) ($row->event_id ?? ''),
                     (string) ($row->organization_id ?? ''),
                     (string) data_get($metadata, 'item_title', ''),
+                    (string) data_get($metadata, 'item_subtitle', ''),
+                    (string) data_get($metadata, 'item_index', ''),
+                    (string) data_get($metadata, 'item_position', ''),
                 ]);
             })
-            ->map(function ($rows) {
+            ->map(function ($rows) use ($resolveHighlightTitle, $stringOrNull) {
                 $row = $rows->first();
                 $metadata = is_array($row->metadata) ? $row->metadata : [];
+                $itemIndex = data_get($metadata, 'item_index');
+                $itemPosition = $stringOrNull(data_get($metadata, 'item_position'))
+                    ?? ($itemIndex ? 'Slide ' . $itemIndex : null);
 
                 return [
                     'action' => $row->action ?: 'click',
                     'highlight_id' => $row->highlight_id,
-                    'highlight_title' => data_get($metadata, 'highlight_title') ?: 'Highlight',
-                    'item_title' => data_get($metadata, 'item_title') ?: 'Unknown item',
+                    'highlight_title' => $stringOrNull(data_get($metadata, 'highlight_title')) ?: 'Highlight',
+                    'item_title' => $resolveHighlightTitle($row, $metadata),
+                    'item_subtitle' => $stringOrNull(data_get($metadata, 'item_subtitle')),
+                    'item_index' => $itemIndex ? (int) $itemIndex : null,
+                    'item_position' => $itemPosition,
                     'offer_id' => $row->offer_id,
                     'event_id' => $row->event_id,
                     'organization_id' => $row->organization_id,
@@ -418,18 +443,25 @@ class AdminController extends Controller
                     (string) ($row->event_id ?? ''),
                     (string) ($row->organization_id ?? ''),
                     (string) data_get($metadata, 'item_title', ''),
+                    (string) data_get($metadata, 'item_subtitle', ''),
                     (string) data_get($metadata, 'item_index', ''),
+                    (string) data_get($metadata, 'item_position', ''),
                 ]);
             })
-            ->map(function ($rows) {
+            ->map(function ($rows) use ($resolveHighlightTitle, $stringOrNull) {
                 $row = $rows->first();
                 $metadata = is_array($row->metadata) ? $row->metadata : [];
+                $itemIndex = data_get($metadata, 'item_index');
+                $itemPosition = $stringOrNull(data_get($metadata, 'item_position'))
+                    ?? ($itemIndex ? 'Slide ' . $itemIndex : null);
 
                 return [
                     'highlight_id' => $row->highlight_id,
-                    'highlight_title' => data_get($metadata, 'highlight_title') ?: 'Highlight',
-                    'item_title' => data_get($metadata, 'item_title') ?: 'Unknown item',
-                    'item_index' => data_get($metadata, 'item_index'),
+                    'highlight_title' => $stringOrNull(data_get($metadata, 'highlight_title')) ?: 'Highlight',
+                    'item_title' => $resolveHighlightTitle($row, $metadata),
+                    'item_subtitle' => $stringOrNull(data_get($metadata, 'item_subtitle')),
+                    'item_index' => $itemIndex ? (int) $itemIndex : null,
+                    'item_position' => $itemPosition,
                     'offer_id' => $row->offer_id,
                     'event_id' => $row->event_id,
                     'organization_id' => $row->organization_id,
@@ -451,11 +483,16 @@ class AdminController extends Controller
 
         $filterActions = $filterEvents
             ->filter(fn ($row) => $row->event_name === 'filter_click')
-            ->groupBy(fn ($row) => implode('|', [$row->filter ?: 'unknown', $row->action ?: 'unknown']))
+            ->groupBy(function ($row) {
+                $label = data_get($row->metadata, 'filter_label') ?: data_get($row->metadata, 'attribute_name') ?: $row->filter ?: 'unknown';
+                return implode('|', [$row->filter ?: 'unknown', $label, $row->action ?: 'unknown']);
+            })
             ->map(function ($rows) {
                 $row = $rows->first();
+                $label = data_get($row->metadata, 'filter_label') ?: data_get($row->metadata, 'attribute_name') ?: $row->filter ?: 'unknown';
                 return [
                     'filter' => $row->filter ?: 'unknown',
+                    'filter_label' => $label,
                     'action' => $row->action ?: 'unknown',
                     'total' => $rows->count(),
                 ];
@@ -470,6 +507,7 @@ class AdminController extends Controller
                     $row->event_name ?: 'unknown',
                     $row->filter ?: 'unknown',
                     $row->action ?: 'unknown',
+                    (string) data_get($row->metadata, 'filter_label', ''),
                     (string) data_get($row->metadata, 'attribute_name', ''),
                     (string) data_get($row->metadata, 'filter_value', ''),
                 ]);
@@ -479,7 +517,7 @@ class AdminController extends Controller
                 return [
                     'event_name' => $row->event_name ?: 'unknown',
                     'filter' => $row->filter ?: 'unknown',
-                    'filter_label' => data_get($row->metadata, 'filter_label') ?: ($row->filter ?: 'unknown'),
+                    'filter_label' => data_get($row->metadata, 'filter_label') ?: data_get($row->metadata, 'attribute_name') ?: ($row->filter ?: 'unknown'),
                     'action' => $row->action ?: ($row->event_name === 'filter_apply' ? 'apply' : 'unknown'),
                     'attribute_name' => data_get($row->metadata, 'attribute_name'),
                     'filter_value' => data_get($row->metadata, 'filter_value'),
