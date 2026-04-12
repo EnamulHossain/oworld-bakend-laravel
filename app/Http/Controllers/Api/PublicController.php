@@ -27,7 +27,7 @@ class PublicController extends Controller
             ->where('status', 'active')
             ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description']);
+            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order']);
 
         return response()->json([
             'success' => true,
@@ -53,7 +53,7 @@ class PublicController extends Controller
         $category = Category::query()
             ->where('status', 'active')
             ->whereKey($id)
-            ->first(['id', 'name', 'short_name', 'description', 'image', 'icon', 'created_at', 'updated_at']);
+            ->first(['id', 'name', 'short_name', 'description', 'image', 'banner', 'gallery_sort_order', 'icon', 'created_at', 'updated_at']);
 
         if (!$category) {
             return response()->json(['error' => 'Category not found.'], 404);
@@ -153,10 +153,23 @@ class PublicController extends Controller
             ];
         });
 
+        $categoryBanner = is_array($category->banner) ? $category->banner : [];
+        $gallerySortOrder = is_array($category->gallery_sort_order) ? $category->gallery_sort_order : [];
+        usort($categoryBanner, function ($left, $right) use ($gallerySortOrder) {
+            $leftOrder = isset($gallerySortOrder[$left]) ? (int) $gallerySortOrder[$left] : PHP_INT_MAX;
+            $rightOrder = isset($gallerySortOrder[$right]) ? (int) $gallerySortOrder[$right] : PHP_INT_MAX;
+            if ($leftOrder === $rightOrder) {
+                return 0;
+            }
+            return $leftOrder <=> $rightOrder;
+        });
+
         return response()->json([
             'success' => true,
             'category' => array_merge($category->toArray(), [
                 'itemCount' => $formattedEvents->count() + $formattedOffers->count(),
+                'gallery' => $categoryBanner,
+                'banners' => $categoryBanner,
             ]),
             'events' => $formattedEvents,
             'offers' => $formattedOffers,

@@ -654,13 +654,24 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'short_name' => ['nullable', 'string', 'max:50'],
             'image' => ['nullable', 'string', 'max:500'],
+            'banner' => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
             'icon' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'description' => ['nullable', 'string'],
         ]);
 
+        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+        if (!is_array($gallerySortOrder)) {
+            $gallerySortOrder = [];
+        }
+
         $category = Category::create($data + ['created_by' => $request->user()->id]);
+        $category->update([
+            'banner' => $this->toArrayField($data['banner'] ?? []),
+            'gallery_sort_order' => $gallerySortOrder,
+        ]);
 
         return response()->json(['success' => true, 'category' => $category], 201);
     }
@@ -671,11 +682,21 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:100'],
             'short_name' => ['nullable', 'string', 'max:50'],
             'image' => ['nullable', 'string', 'max:500'],
+            'banner' => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
             'icon' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'description' => ['nullable', 'string'],
         ]);
+
+        if (array_key_exists('banner', $data)) {
+            $data['banner'] = $this->toArrayField($data['banner']);
+        }
+        if (array_key_exists('gallery_sort_order', $data)) {
+            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
+            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
+        }
 
         $category->update($data);
         return response()->json(['success' => true, 'category' => $category]);
