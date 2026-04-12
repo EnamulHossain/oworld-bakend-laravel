@@ -960,6 +960,10 @@ class AdminController extends Controller
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
                 'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
+                'is_recurring' => ['nullable', 'boolean'],
+                'recurring_start_date' => ['nullable', 'date'],
+                'recurring_end_date' => ['nullable', 'date'],
+                'recurring_day_interval' => ['nullable', 'integer', 'min:1'],
             ]);
 
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -968,6 +972,8 @@ class AdminController extends Controller
 
             $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+            $data = $this->normalizeOfferRecurringFields($data);
+            $this->validateOfferRecurringFields($data);
 
             $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
             if (!is_array($gallerySortOrder)) {
@@ -1056,6 +1062,10 @@ class AdminController extends Controller
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
                 'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
+                'is_recurring' => ['nullable', 'boolean'],
+                'recurring_start_date' => ['nullable', 'date'],
+                'recurring_end_date' => ['nullable', 'date'],
+                'recurring_day_interval' => ['nullable', 'integer', 'min:1'],
             ]);
 
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -1064,6 +1074,8 @@ class AdminController extends Controller
 
             $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+            $data = $this->normalizeOfferRecurringFields($data);
+            $this->validateOfferRecurringFields($data, $offer);
 
             if (array_key_exists('images', $data)) {
                 $data['images'] = $this->toArrayField($data['images']);
@@ -2099,6 +2111,103 @@ class AdminController extends Controller
         }
 
         return $data;
+    }
+
+    private function normalizeOfferRecurringFields(array $data): array
+    {
+        if (array_key_exists('is_recurring', $data)) {
+            $data['is_recurring'] = filter_var($data['is_recurring'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+        }
+
+        foreach (['recurring_start_date', 'recurring_end_date'] as $field) {
+            if (!array_key_exists($field, $data) || empty($data[$field])) {
+                continue;
+            }
+
+            [$normalizedDate] = $this->extractDateAndTime((string) $data[$field]);
+            $data[$field] = $normalizedDate;
+        }
+
+        if (array_key_exists('recurring_day_interval', $data)) {
+            $data['recurring_day_interval'] = $data['recurring_day_interval'] === null || $data['recurring_day_interval'] === ''
+                ? null
+                : (int) $data['recurring_day_interval'];
+        }
+
+        return $data;
+    }
+
+    private function validateOfferRecurringFields(array &$data, ?Offer $offer = null): void
+    {
+        $isRecurring = array_key_exists('is_recurring', $data)
+            ? (bool) $data['is_recurring']
+            : (bool) ($offer?->is_recurring);
+
+        if (!$isRecurring) {
+            $data['is_recurring'] = false;
+            $data['recurring_start_date'] = null;
+            $data['recurring_end_date'] = null;
+            $data['recurring_day_interval'] = null;
+            return;
+        }
+
+        $startDate = $data['start_date'] ?? $offer?->start_date?->format('Y-m-d');
+        $endDate = $data['end_date'] ?? $offer?->end_date?->format('Y-m-d');
+        $recurringStart = $data['recurring_start_date'] ?? $offer?->recurring_start_date?->format('Y-m-d');
+        $recurringEnd = $data['recurring_end_date'] ?? $offer?->recurring_end_date?->format('Y-m-d');
+        $recurringDayInterval = $data['recurring_day_interval'] ?? $offer?->recurring_day_interval;
+
+        $messages = [];
+
+        if (!$recurringStart) {
+            $messages['recurring_start_date'] = 'Recurring start date is required when recurring is enabled.';
+        }
+
+        if (!$recurringEnd) {
+            $messages['recurring_end_date'] = 'Recurring end date is required when recurring is enabled.';
+        }
+
+        if (!$recurringDayInterval) {
+            $messages['recurring_day_interval'] = 'Recurring day number is required when recurring is enabled.';
+        }
+
+        if (!$startDate || !$endDate) {
+            $messages['start_date'] = 'Offer start date and end date are required for recurring offers.';
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+
+        $offerStart = Carbon::parse($startDate)->startOfDay();
+        $offerEnd = Carbon::parse($endDate)->startOfDay();
+        $recurringStartDate = Carbon::parse($recurringStart)->startOfDay();
+        $recurringEndDate = Carbon::parse($recurringEnd)->startOfDay();
+
+        if ($recurringEndDate->lt($recurringStartDate)) {
+            $messages['recurring_end_date'] = 'Recurring end date must be after or equal to recurring start date.';
+        }
+
+        if ($recurringStartDate->lt($offerStart)) {
+            $messages['recurring_start_date'] = 'Recurring start date must be within the offer start and end dates.';
+        }
+
+        if ($recurringEndDate->gt($offerEnd)) {
+            $messages['recurring_end_date'] = 'Recurring end date must be within the offer start and end dates.';
+        }
+
+        if ((int) $recurringDayInterval < 1) {
+            $messages['recurring_day_interval'] = 'Recurring day number must be at least 1.';
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+
+        $data['is_recurring'] = true;
+        $data['recurring_start_date'] = $recurringStartDate->format('Y-m-d');
+        $data['recurring_end_date'] = $recurringEndDate->format('Y-m-d');
+        $data['recurring_day_interval'] = (int) $recurringDayInterval;
     }
 
     private function extractDateAndTime(string $value): array
