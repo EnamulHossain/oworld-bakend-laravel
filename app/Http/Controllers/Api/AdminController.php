@@ -984,7 +984,8 @@ class AdminController extends Controller
                 'is_recurring' => ['nullable', 'boolean'],
                 'recurring_start_date' => ['nullable', 'date'],
                 'recurring_end_date' => ['nullable', 'date'],
-                'recurring_day_interval' => ['nullable', 'integer', 'min:1'],
+                'recurring_days' => ['nullable', 'array'],
+                'recurring_days.*' => ['string'],
             ]);
 
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -1092,7 +1093,8 @@ class AdminController extends Controller
                 'is_recurring' => ['nullable', 'boolean'],
                 'recurring_start_date' => ['nullable', 'date'],
                 'recurring_end_date' => ['nullable', 'date'],
-                'recurring_day_interval' => ['nullable', 'integer', 'min:1'],
+                'recurring_days' => ['nullable', 'array'],
+                'recurring_days.*' => ['string'],
             ]);
 
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -2189,10 +2191,9 @@ class AdminController extends Controller
             $data[$field] = $normalizedDate;
         }
 
-        if (array_key_exists('recurring_day_interval', $data)) {
-            $data['recurring_day_interval'] = $data['recurring_day_interval'] === null || $data['recurring_day_interval'] === ''
-                ? null
-                : (int) $data['recurring_day_interval'];
+        if (array_key_exists('recurring_days', $data)) {
+            $rawRecurringDays = $this->normalizeJsonField($data['recurring_days']);
+            $data['recurring_days'] = $this->normalizeRecurringDays(is_array($rawRecurringDays) ? $rawRecurringDays : []);
         }
 
         return $data;
@@ -2208,7 +2209,7 @@ class AdminController extends Controller
             $data['is_recurring'] = false;
             $data['recurring_start_date'] = null;
             $data['recurring_end_date'] = null;
-            $data['recurring_day_interval'] = null;
+            $data['recurring_days'] = [];
             return;
         }
 
@@ -2216,7 +2217,7 @@ class AdminController extends Controller
         $endDate = $data['end_date'] ?? $offer?->end_date?->format('Y-m-d');
         $recurringStart = $data['recurring_start_date'] ?? $offer?->recurring_start_date?->format('Y-m-d');
         $recurringEnd = $data['recurring_end_date'] ?? $offer?->recurring_end_date?->format('Y-m-d');
-        $recurringDayInterval = $data['recurring_day_interval'] ?? $offer?->recurring_day_interval;
+        $recurringDays = $this->normalizeRecurringDays($data['recurring_days'] ?? $offer?->recurring_days ?? []);
 
         $messages = [];
 
@@ -2228,8 +2229,8 @@ class AdminController extends Controller
             $messages['recurring_end_date'] = 'Recurring end date is required when recurring is enabled.';
         }
 
-        if (!$recurringDayInterval) {
-            $messages['recurring_day_interval'] = 'Recurring day number is required when recurring is enabled.';
+        if ($recurringDays === []) {
+            $messages['recurring_days'] = 'At least one recurring day is required when recurring is enabled.';
         }
 
         if (!$startDate || !$endDate) {
@@ -2257,8 +2258,9 @@ class AdminController extends Controller
             $messages['recurring_end_date'] = 'Recurring end date must be within the offer start and end dates.';
         }
 
-        if ((int) $recurringDayInterval < 1) {
-            $messages['recurring_day_interval'] = 'Recurring day number must be at least 1.';
+        $invalidRecurringDays = array_diff($recurringDays, $this->allowedRecurringDays());
+        if ($invalidRecurringDays !== []) {
+            $messages['recurring_days'] = 'Recurring days must be valid weekday names.';
         }
 
         if ($messages !== []) {
@@ -2268,7 +2270,36 @@ class AdminController extends Controller
         $data['is_recurring'] = true;
         $data['recurring_start_date'] = $recurringStartDate->format('Y-m-d');
         $data['recurring_end_date'] = $recurringEndDate->format('Y-m-d');
-        $data['recurring_day_interval'] = (int) $recurringDayInterval;
+        $data['recurring_days'] = $recurringDays;
+    }
+
+    private function allowedRecurringDays(): array
+    {
+        return [
+            'sunday',
+            'monday',
+            'tuesday',
+            'wednesday',
+            'thursday',
+            'friday',
+            'saturday',
+        ];
+    }
+
+    private function normalizeRecurringDays(array $days): array
+    {
+        $normalized = [];
+
+        foreach ($days as $day) {
+            $value = strtolower(trim((string) $day));
+            if ($value === '' || isset($normalized[$value])) {
+                continue;
+            }
+
+            $normalized[$value] = true;
+        }
+
+        return array_keys($normalized);
     }
 
     private function extractDateAndTime(string $value): array
