@@ -1000,6 +1000,12 @@ class AdminController extends Controller
             if (!is_array($gallerySortOrder)) {
                 $gallerySortOrder = [];
             }
+            $images = $this->toArrayField($data['images'] ?? []);
+            $data['images'] = $images;
+            $data['thumbnail'] = $this->resolveOfferThumbnail(
+                $data['thumbnail'] ?? null,
+                $images
+            );
 
             $offer = DB::transaction(function () use ($data, $request, $gallerySortOrder) {
                 $requestedOrder = $data['sort_order'] ?? null;
@@ -1013,7 +1019,7 @@ class AdminController extends Controller
                 $offer = Offer::create([
                     ...$data,
                     'sort_order' => $finalOrder,
-                    'images' => $this->toArrayField($data['images'] ?? []),
+                    'images' => $data['images'],
                     'gallery_sort_order' => $gallerySortOrder,
                     'videos' => $this->toArrayField($data['videos'] ?? []),
                     'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
@@ -1110,6 +1116,15 @@ class AdminController extends Controller
             }
             if (array_key_exists('attributes', $data)) {
                 $data['attributes'] = $this->normalizeAttributes($data['attributes']);
+            }
+            if (
+                array_key_exists('thumbnail', $data)
+                || array_key_exists('images', $data)
+            ) {
+                $data['thumbnail'] = $this->resolveOfferThumbnail(
+                    $data['thumbnail'] ?? $offer->thumbnail,
+                    $data['images'] ?? $offer->images ?? []
+                );
             }
 
             DB::transaction(function () use ($data, $offer, $request) {
@@ -1936,30 +1951,38 @@ class AdminController extends Controller
 
             if (array_key_exists('values', $data)) {
                 $values = $this->normalizeAttributeValues($data['values'] ?? []);
-                if (!empty($values)) {
-                    $existingValues = $attribute->values()->get();
-                    $existingByKey = $existingValues->keyBy(
-                        fn ($item) => $this->normalizeAttributeValueKey((string) ($item->value ?? ''))
-                    );
-                    $seen = [];
+                $existingValues = $attribute->values()->get();
+                $existingByKey = $existingValues->keyBy(
+                    fn ($item) => $this->normalizeAttributeValueKey((string) ($item->value ?? ''))
+                );
+                $seen = [];
 
-                    foreach ($values as $valuePayload) {
-                        $key = $this->normalizeAttributeValueKey((string) ($valuePayload['value'] ?? ''));
-                        if ($key === '' || isset($seen[$key])) {
-                            continue;
-                        }
-                        $seen[$key] = true;
-
-                        $existing = $existingByKey->get($key);
-                        if ($existing) {
-                            $existing->update([
-                                'color_code' => $valuePayload['color_code'] ?? null,
-                            ]);
-                            continue;
-                        }
-
-                        $attribute->values()->create($valuePayload);
+                foreach ($values as $valuePayload) {
+                    $key = $this->normalizeAttributeValueKey((string) ($valuePayload['value'] ?? ''));
+                    if ($key === '' || isset($seen[$key])) {
+                        continue;
                     }
+                    $seen[$key] = true;
+
+                    $existing = $existingByKey->get($key);
+                    if ($existing) {
+                        $existing->update([
+                            'color_code' => $valuePayload['color_code'] ?? null,
+                        ]);
+                        continue;
+                    }
+
+                    $attribute->values()->create($valuePayload);
+                }
+
+                if (!empty($seen)) {
+                    $attribute->values()
+                        ->whereNotIn('id', $existingValues
+                            ->filter(fn ($item) => isset($seen[$this->normalizeAttributeValueKey((string) ($item->value ?? ''))]))
+                            ->pluck('id'))
+                        ->delete();
+                } else {
+                    $attribute->values()->delete();
                 }
             }
 
@@ -1990,6 +2013,23 @@ class AdminController extends Controller
         } while (CouponDetail::where('coupon', $code)->exists());
 
         return $code;
+    }
+
+    private function resolveOfferThumbnail($thumbnail, array $images): ?string
+    {
+        $thumbnailValue = is_string($thumbnail) ? trim($thumbnail) : '';
+        if ($thumbnailValue !== '') {
+            return $thumbnailValue;
+        }
+
+        foreach ($images as $image) {
+            $imageValue = is_string($image) ? trim($image) : '';
+            if ($imageValue !== '') {
+                return $imageValue;
+            }
+        }
+
+        return null;
     }
 
     private function findExistingOrganization(string $organizationName): ?User
