@@ -39,6 +39,8 @@ class User extends BaseAuthenticatable
         'about',
         'google_id',
         'avatar',
+        'referral_code',
+        'referred_by_user_id',
     ];
 
     /**
@@ -93,5 +95,20 @@ class User extends BaseAuthenticatable
     public function wishlistItems()
     {
         return $this->hasMany(WishlistItem::class);
+    }
+
+    public function referralsMade()
+    {
+        return $this->hasMany(Referral::class, 'referrer_user_id');
+    }
+
+    public function referralsReceived()
+    {
+        return $this->hasMany(Referral::class, 'referred_user_id');
+    }
+
+    public function referrer()
+    {
+        return $this->belongsTo(User::class, 'referred_by_user_id');
     }
 }
