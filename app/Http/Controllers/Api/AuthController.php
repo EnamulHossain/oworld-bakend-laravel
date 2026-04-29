@@ -71,11 +71,12 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $data = $request->validate([
-            'email' => ['required', 'email'],
+            'email' => ['required', 'string', 'max:255'],
             'password' => ['required'],
         ]);
 
-        $user = User::where('email', $data['email'])->first();
+        $identifier = trim($data['email']);
+        $user = $this->findUserForLogin($identifier);
 
         if (!$user || !Hash::check($data['password'], $user->password)) {
             return response()->json(['error' => 'Invalid email or password.'], 401);
@@ -88,6 +89,21 @@ class AuthController extends Controller
             'token' => $token,
             'user' => $this->formatUser($user),
         ]);
+    }
+
+    private function findUserForLogin(string $identifier): ?User
+    {
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            return User::where('email', $identifier)->first();
+        }
+
+        $normalizedPhone = preg_replace('/[\s\-\(\)]/', '', $identifier);
+
+        return User::where('phone', $identifier)
+            ->when($normalizedPhone !== $identifier, function ($query) use ($normalizedPhone) {
+                $query->orWhere('phone', $normalizedPhone);
+            })
+            ->first();
     }
 
     public function forgotPassword(Request $request)
