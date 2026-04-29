@@ -4,11 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\FormatsUser;
 use App\Http\Controllers\Controller;
+use App\Models\CouponDetail;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\Rule;
 
 class UserProfileController extends Controller
 {
@@ -18,6 +19,60 @@ class UserProfileController extends Controller
     {
         return response()->json([
             'user' => $this->formatUser($request->user()),
+        ]);
+    }
+
+    public function coupons(Request $request)
+    {
+        $user = $request->user();
+
+        $items = CouponDetail::query()
+            ->with([
+                'couponMaster:id,name,image,description,campaign_type,organization_id,status,start_date,start_time,end_date,end_time,usage_limit_per_user',
+                'couponMaster.organization:id,organization_name,username',
+                'tier:id,coupon_id,label,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count',
+            ])
+            ->where(function ($query) use ($user) {
+                $query->where('claimed_by_user_id', $user->id)
+                    ->orWhere('user_id', $user->id);
+            })
+            ->orderByDesc('claimed_at')
+            ->orderByDesc('used_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (CouponDetail $detail) {
+                $coupon = $detail->couponMaster;
+                $tier = $detail->tier;
+
+                return [
+                    'id' => $detail->id,
+                    'campaign_id' => $coupon?->id,
+                    'campaign_name' => $coupon?->name,
+                    'image' => $coupon?->image,
+                    'description' => $coupon?->description,
+                    'campaign_type' => $coupon?->campaign_type,
+                    'code' => $detail->coupon,
+                    'offer_id' => $detail->offer_id,
+                    'event_id' => $detail->event_id,
+                    'organization_name' => $coupon?->organization?->organization_name
+                        ?: $coupon?->organization?->username,
+                    'status' => $coupon?->status,
+                    'tier_label' => $tier?->label,
+                    'discount_type' => $detail->discount_type,
+                    'discount_value' => $detail->discount_value !== null ? (float) $detail->discount_value : null,
+                    'max_discount_amount' => $detail->max_discount_amount !== null ? (float) $detail->max_discount_amount : null,
+                    'min_order_amount' => $detail->min_order_amount !== null ? (float) $detail->min_order_amount : null,
+                    'claimed_at' => optional($detail->claimed_at)?->toISOString(),
+                    'used_at' => optional($detail->used_at)?->toISOString(),
+                    'is_used' => (bool) $detail->is_used,
+                    'start_date' => $coupon?->start_date?->format('Y-m-d'),
+                    'end_date' => $coupon?->end_date?->format('Y-m-d'),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'coupons' => $items,
         ]);
     }
 

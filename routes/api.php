@@ -31,11 +31,13 @@ Route::get('public/content-blocks', [PublicController::class, 'contentBlocks']);
 Route::get('public/attributes', [PublicController::class, 'attributes']);
 Route::get('public/search', [PublicController::class, 'search']);
 Route::get('public/settings/{key}', [PublicController::class, 'setting']);
+Route::post('public/coupons/validate', [PublicController::class, 'validateCoupon']);
 Route::post('public/analytics/events', [PublicController::class, 'trackAnalyticsEvent'])->middleware('throttle:240,1');
 Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHighlight']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('profile', [UserProfileController::class, 'show']);
+    Route::get('profile/coupons', [UserProfileController::class, 'coupons']);
     Route::match(['put', 'patch'], 'profile', [UserProfileController::class, 'update']);
     Route::post('profile/avatar', [UserProfileController::class, 'updateAvatar']);
     Route::post('profile/password', [UserProfileController::class, 'updatePassword']);
@@ -44,6 +46,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('wishlist', [WishlistController::class, 'store']);
     Route::delete('wishlist', [WishlistController::class, 'destroy']);
 
+    Route::post('coupons/claim', [PublicController::class, 'claimCoupon']);
+    Route::post('coupons/redeem', [PublicController::class, 'redeemCoupon']);
     Route::get('highlights/reactions', [PublicController::class, 'highlightReactions']);
     Route::post('highlights/{highlight}/react', [PublicController::class, 'reactToHighlight']);
 });
@@ -87,6 +91,9 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
     Route::post('offers/upload-media', [AdminController::class, 'uploadOfferMedia']);
     Route::get('coupons', [AdminController::class, 'listCoupons']);
     Route::post('coupons', [AdminController::class, 'storeCoupon']);
+    Route::put('coupons/{coupon}', [AdminController::class, 'updateCoupon']);
+    Route::delete('coupons/{coupon}', [AdminController::class, 'deleteCoupon']);
+    Route::post('coupons/upload-image', [AdminController::class, 'uploadCouponImage']);
 
     Route::get('highlights', [AdminController::class, 'listHighlights']);
     Route::post('highlights', [AdminController::class, 'storeHighlight']);

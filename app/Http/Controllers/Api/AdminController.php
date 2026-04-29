@@ -10,6 +10,7 @@ use App\Models\Category;
 use App\Models\ContentBlock;
 use App\Models\Coupon;
 use App\Models\CouponDetail;
+use App\Models\CouponTier;
 use App\Models\Event;
 use App\Models\HighlightReel;
 use App\Models\HighlightReelItem;
@@ -1186,10 +1187,13 @@ class AdminController extends Controller
 
     public function listCoupons(Request $request)
     {
+        $this->expireCouponsIfNeeded();
+
         $query = Coupon::query()
             ->with([
                 'organization:id,organization_name,username',
-                'details:id,coupon_id,offer_id,event_id,organization_id',
+                'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+                'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
@@ -1219,65 +1223,18 @@ class AdminController extends Controller
 
     public function storeCoupon(Request $request)
     {
-        $data = $request->validate([
-            'coupon_name' => ['required', 'string', 'max:200'],
-            'offer_id' => ['nullable', 'exists:offers,id'],
-            'event_id' => ['nullable', 'exists:events,id'],
-            'organization_id' => ['nullable', 'exists:users,id'],
-            'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
-            'start_date' => ['nullable', 'date'],
-            'start_time' => ['nullable', 'date_format:H:i'],
-            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'end_time' => ['nullable', 'date_format:H:i'],
-            'coupon_no' => ['required', 'integer', 'min:1', 'max:1000'],
+        [$data, $tiers, $masterPayload, $organizationId] = $this->prepareCouponPayload($request);
+        $coupon = $this->saveCouponCampaign(null, $masterPayload, $tiers, $data, $request, $organizationId);
+
+        $this->expireCouponsIfNeeded([$coupon->id]);
+        $coupon->load([
+            'organization:id,organization_name,username',
+            'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+            'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
         ]);
 
-        $data = $this->normalizeDateAndTimeFields($data, 'start_date');
-        $couponCount = (int) ($data['coupon_no'] ?? 1);
-        $masterPayload = [
-            'name' => trim((string) $data['coupon_name']),
-            'organization_id' => $data['organization_id'] ?? null,
-            'status' => $data['status'] ?? 'draft',
-            'start_date' => $data['start_date'] ?? null,
-            'start_time' => $data['start_time'] ?? null,
-            'end_date' => $data['end_date'] ?? null,
-            'end_time' => $data['end_time'] ?? null,
-            'total_coupon' => $couponCount,
-            'created_by' => $request->user()->id,
-            'updated_by' => $request->user()->id,
-        ];
-
-        $detailPayload = [
-            'offer_id' => $data['offer_id'] ?? null,
-            'event_id' => $data['event_id'] ?? null,
-            'organization_id' => $data['organization_id'] ?? null,
-            'created_by' => $request->user()->id,
-            'updated_by' => $request->user()->id,
-            'is_used' => false,
-            'used_at' => null,
-        ];
-
-        $createdCoupons = DB::transaction(function () use ($couponCount, $masterPayload, $detailPayload) {
-            $master = Coupon::create($masterPayload);
-
-            for ($index = 0; $index < $couponCount; $index++) {
-                CouponDetail::create([
-                    ...$detailPayload,
-                    'coupon_id' => $master->id,
-                    'coupon' => $this->generateUniqueCouponCode(),
-                ]);
-            }
-
-            return Coupon::query()
-                ->with([
-                    'organization:id,organization_name,username',
-                    'details:id,coupon_id,offer_id,event_id,organization_id',
-                ])
-                ->where('id', $master->id)
-                ->get();
-        });
-        $responseCoupons = $createdCoupons
-            ->map(fn (Coupon $coupon) => $this->formatCouponForResponse($coupon))
+        $responseCoupons = collect([$coupon])
+            ->map(fn (Coupon $item) => $this->formatCouponForResponse($item))
             ->values();
 
         return response()->json([
@@ -1285,6 +1242,184 @@ class AdminController extends Controller
             'created_count' => $responseCoupons->count(),
             'coupons' => $responseCoupons,
         ], 201);
+    }
+
+    public function updateCoupon(Request $request, Coupon $coupon)
+    {
+        [$data, $tiers, $masterPayload, $organizationId] = $this->prepareCouponPayload($request, $coupon);
+        $coupon = $this->saveCouponCampaign($coupon, $masterPayload, $tiers, $data, $request, $organizationId);
+
+        $this->expireCouponsIfNeeded([$coupon->id]);
+        $coupon->load([
+            'organization:id,organization_name,username',
+            'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+            'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'coupon' => $this->formatCouponForResponse($coupon),
+        ]);
+    }
+
+    public function deleteCoupon(Coupon $coupon)
+    {
+        DB::transaction(function () use ($coupon) {
+            $coupon->details()->delete();
+            $coupon->tiers()->delete();
+            $coupon->delete();
+        });
+
+        return response()->json([
+            'success' => true,
+        ]);
+    }
+
+    public function uploadCouponImage(Request $request)
+    {
+        $request->validate([
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file('image')->store('uploads/coupons', 'public');
+
+        return response()->json([
+            'success' => true,
+            'imageUrl' => '/storage/' . $path,
+        ], 201);
+    }
+
+    private function prepareCouponPayload(Request $request, ?Coupon $coupon = null): array
+    {
+        $data = $request->validate([
+            'coupon_name' => ['required', 'string', 'max:200'],
+            'image' => ['nullable', 'string', 'max:500'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'campaign_type' => ['nullable', Rule::in(['standard', 'tiered', 'referral'])],
+            'offer_id' => ['nullable', 'exists:offers,id'],
+            'event_id' => ['nullable', 'exists:events,id'],
+            'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
+            'start_date' => ['nullable', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'coupon_no' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'usage_limit_per_user' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'discount_type' => ['nullable', Rule::in(['percentage', 'flat'])],
+            'discount_value' => ['nullable', 'numeric', 'min:0.01'],
+            'max_discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'min_order_amount' => ['nullable', 'numeric', 'min:0'],
+            'referral_required_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'tiers' => ['nullable', 'array', 'min:1', 'max:20'],
+            'tiers.*.label' => ['nullable', 'string', 'max:120'],
+            'tiers.*.quantity' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'tiers.*.discount_type' => ['nullable', Rule::in(['percentage', 'flat'])],
+            'tiers.*.discount_value' => ['nullable', 'numeric', 'min:0.01'],
+            'tiers.*.max_discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'tiers.*.min_order_amount' => ['nullable', 'numeric', 'min:0'],
+            'tiers.*.referral_required_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
+        ]);
+
+        $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+        $this->validateCouponTargetFields($data);
+        $tiers = $this->normalizeCouponTierPayload($data);
+        $this->validateCouponTierPayload($tiers, $data['campaign_type'] ?? null, $data['coupon_no'] ?? null);
+        $couponCount = (int) collect($tiers)->sum('quantity');
+        $campaignType = $this->resolveCouponCampaignType($tiers, $data['campaign_type'] ?? null);
+        $organizationId = $this->resolveCouponOrganizationId($data);
+
+        $masterPayload = [
+            'name' => trim((string) $data['coupon_name']),
+            'image' => trim((string) ($data['image'] ?? '')) ?: null,
+            'description' => trim((string) ($data['description'] ?? '')) ?: null,
+            'campaign_type' => $campaignType,
+            'organization_id' => $organizationId,
+            'status' => $data['status'] ?? ($coupon?->status ?? 'draft'),
+            'start_date' => $data['start_date'] ?? null,
+            'start_time' => $data['start_time'] ?? null,
+            'end_date' => $data['end_date'] ?? null,
+            'end_time' => $data['end_time'] ?? null,
+            'total_coupon' => $couponCount,
+            'usage_limit_per_user' => $data['usage_limit_per_user'] ?? 1,
+            'updated_by' => $request->user()->id,
+        ];
+
+        if (!$coupon) {
+            $masterPayload['created_by'] = $request->user()->id;
+        }
+
+        return [$data, $tiers, $masterPayload, $organizationId];
+    }
+
+    private function saveCouponCampaign(?Coupon $coupon, array $masterPayload, array $tiers, array $data, Request $request, ?int $organizationId): Coupon
+    {
+        return DB::transaction(function () use ($coupon, $masterPayload, $tiers, $data, $request, $organizationId) {
+            $master = $coupon;
+
+            if ($master) {
+                $hasLockedCodes = $master->details()
+                    ->where(function ($query) {
+                        $query->whereNotNull('claimed_by_user_id')
+                            ->orWhereNotNull('claimed_at')
+                            ->orWhere('is_used', true)
+                            ->orWhereNotNull('user_id')
+                            ->orWhereNotNull('used_at');
+                    })
+                    ->exists();
+
+                if ($hasLockedCodes) {
+                    throw ValidationException::withMessages([
+                        'coupon' => 'Coupons that have claimed or used codes cannot be edited.',
+                    ]);
+                }
+
+                $master->update($masterPayload);
+                $master->details()->delete();
+                $master->tiers()->delete();
+            } else {
+                $master = Coupon::create($masterPayload);
+            }
+
+            foreach ($tiers as $index => $tierData) {
+                $tier = CouponTier::create([
+                    'coupon_id' => $master->id,
+                    'label' => $tierData['label'] ?: sprintf('Tier %d', $index + 1),
+                    'quantity' => $tierData['quantity'],
+                    'discount_type' => $tierData['discount_type'],
+                    'discount_value' => $tierData['discount_value'],
+                    'max_discount_amount' => $tierData['max_discount_amount'],
+                    'min_order_amount' => $tierData['min_order_amount'],
+                    'referral_required_count' => $tierData['referral_required_count'],
+                    'sort_order' => $index,
+                    'created_by' => $master->created_by ?: $request->user()->id,
+                    'updated_by' => $request->user()->id,
+                ]);
+
+                for ($codeIndex = 0; $codeIndex < $tierData['quantity']; $codeIndex++) {
+                    CouponDetail::create([
+                        'coupon_id' => $master->id,
+                        'coupon_tier_id' => $tier->id,
+                        'coupon' => $this->generateUniqueCouponCode(),
+                        'offer_id' => $data['offer_id'] ?? null,
+                        'event_id' => $data['event_id'] ?? null,
+                        'organization_id' => $organizationId,
+                        'discount_type' => $tierData['discount_type'],
+                        'discount_value' => $tierData['discount_value'],
+                        'max_discount_amount' => $tierData['max_discount_amount'],
+                        'min_order_amount' => $tierData['min_order_amount'],
+                        'referral_required_count' => $tierData['referral_required_count'],
+                        'claimed_by_user_id' => null,
+                        'claimed_at' => null,
+                        'created_by' => $master->created_by ?: $request->user()->id,
+                        'updated_by' => $request->user()->id,
+                        'is_used' => false,
+                        'used_at' => null,
+                    ]);
+                }
+            }
+
+            return $master;
+        });
     }
 
     private function formatCouponForResponse(Coupon $coupon): array
@@ -1297,12 +1432,173 @@ class AdminController extends Controller
         $data['coupon_no'] = (int) ($coupon->total_coupon ?? 1);
         $data['offer_id'] = $firstDetail?->offer_id;
         $data['event_id'] = $firstDetail?->event_id;
+        $data['claimed_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => !empty($detail->claimed_by_user_id) || !empty($detail->claimed_at))->count();
+        $data['used_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => (bool) $detail->is_used)->count();
+        $data['tiers'] = $coupon->tiers
+            ->map(fn (CouponTier $tier) => [
+                'id' => $tier->id,
+                'label' => $tier->label,
+                'quantity' => (int) ($tier->quantity ?? 0),
+                'discount_type' => $tier->discount_type,
+                'discount_value' => $tier->discount_value !== null ? (float) $tier->discount_value : null,
+                'max_discount_amount' => $tier->max_discount_amount !== null ? (float) $tier->max_discount_amount : null,
+                'min_order_amount' => $tier->min_order_amount !== null ? (float) $tier->min_order_amount : null,
+                'referral_required_count' => (int) ($tier->referral_required_count ?? 0),
+                'sort_order' => (int) ($tier->sort_order ?? 0),
+            ])
+            ->values()
+            ->all();
+
+        $firstTier = $coupon->tiers->first();
+        $data['discount_type'] = $firstTier?->discount_type;
+        $data['discount_value'] = $firstTier?->discount_value !== null ? (float) $firstTier->discount_value : null;
+        $data['max_discount_amount'] = $firstTier?->max_discount_amount !== null ? (float) $firstTier->max_discount_amount : null;
+        $data['min_order_amount'] = $firstTier?->min_order_amount !== null ? (float) $firstTier->min_order_amount : null;
+        $data['referral_required_count'] = (int) ($firstTier?->referral_required_count ?? 0);
 
         if (empty($data['organization_id']) && $firstDetail?->organization_id) {
             $data['organization_id'] = $firstDetail->organization_id;
         }
 
         return $data;
+    }
+
+    private function validateCouponTargetFields(array $data): void
+    {
+        $targets = array_filter([
+            $data['offer_id'] ?? null,
+            $data['event_id'] ?? null,
+        ], fn ($value) => !empty($value));
+
+        if (count($targets) > 1) {
+            throw ValidationException::withMessages([
+                'target' => 'A coupon campaign can target either one offer or one event, not both at the same time.',
+            ]);
+        }
+    }
+
+    private function resolveCouponOrganizationId(array $data): ?int
+    {
+        $offerId = !empty($data['offer_id']) ? (int) $data['offer_id'] : null;
+        if ($offerId) {
+            return Offer::query()->whereKey($offerId)->value('organization_id');
+        }
+
+        $eventId = !empty($data['event_id']) ? (int) $data['event_id'] : null;
+        if ($eventId) {
+            return Event::query()->whereKey($eventId)->value('organization_id');
+        }
+
+        return null;
+    }
+
+    private function normalizeCouponTierPayload(array $data): array
+    {
+        $rawTiers = collect($data['tiers'] ?? [])->filter(fn ($tier) => is_array($tier))->values();
+
+        if ($rawTiers->isEmpty()) {
+            $rawTiers = collect([[
+                'label' => 'Base tier',
+                'quantity' => $data['coupon_no'] ?? 1,
+                'discount_type' => $data['discount_type'] ?? null,
+                'discount_value' => $data['discount_value'] ?? null,
+                'max_discount_amount' => $data['max_discount_amount'] ?? null,
+                'min_order_amount' => $data['min_order_amount'] ?? null,
+                'referral_required_count' => $data['referral_required_count'] ?? 0,
+            ]]);
+        }
+
+        return $rawTiers
+            ->map(function (array $tier, int $index) {
+                return [
+                    'label' => trim((string) ($tier['label'] ?? '')),
+                    'quantity' => (int) ($tier['quantity'] ?? 0),
+                    'discount_type' => $tier['discount_type'] ?? null,
+                    'discount_value' => isset($tier['discount_value']) ? (float) $tier['discount_value'] : null,
+                    'max_discount_amount' => isset($tier['max_discount_amount']) && $tier['max_discount_amount'] !== ''
+                        ? (float) $tier['max_discount_amount']
+                        : null,
+                    'min_order_amount' => isset($tier['min_order_amount']) && $tier['min_order_amount'] !== ''
+                        ? (float) $tier['min_order_amount']
+                        : null,
+                    'referral_required_count' => max(0, (int) ($tier['referral_required_count'] ?? 0)),
+                    'sort_order' => $index,
+                ];
+            })
+            ->all();
+    }
+
+    private function validateCouponTierPayload(array $tiers, ?string $campaignType = null, ?int $totalCouponLimit = null): void
+    {
+        $messages = [];
+
+        foreach ($tiers as $index => $tier) {
+            $path = "tiers.$index";
+            if (($tier['quantity'] ?? 0) < 1) {
+                $messages["$path.quantity"] = 'Each coupon tier must have at least one code.';
+            }
+
+            if (!in_array($tier['discount_type'] ?? null, ['percentage', 'flat'], true)) {
+                $messages["$path.discount_type"] = 'Coupon discount type must be percentage or flat.';
+            }
+
+            if (($tier['discount_value'] ?? 0) <= 0) {
+                $messages["$path.discount_value"] = 'Coupon discount value must be greater than zero.';
+            }
+
+            if (($tier['discount_type'] ?? null) === 'percentage' && ($tier['discount_value'] ?? 0) > 100) {
+                $messages["$path.discount_value"] = 'Percentage discounts cannot exceed 100.';
+            }
+        }
+
+        if ($tiers === []) {
+            $messages['tiers'] = 'At least one coupon tier is required.';
+        }
+
+        $totalQuantity = (int) collect($tiers)->sum(fn ($tier) => (int) ($tier['quantity'] ?? 0));
+        if ($totalCouponLimit !== null && $totalQuantity > $totalCouponLimit) {
+            $messages['coupon_no'] = 'Tier code count cannot be greater than total codes.';
+        }
+
+        if ($campaignType === 'tiered' && $totalCouponLimit !== null && $totalQuantity !== $totalCouponLimit) {
+            $messages['coupon_no'] = 'For tiered campaigns, total codes must match the sum of tier codes.';
+        }
+
+        if ($campaignType === 'referral' && !collect($tiers)->contains(fn ($tier) => (int) ($tier['referral_required_count'] ?? 0) > 0)) {
+            $messages['tiers'] = 'Referral campaigns must require at least one referral on one tier.';
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+    }
+
+    private function resolveCouponCampaignType(array $tiers, ?string $campaignType = null): string
+    {
+        if ($campaignType) {
+            return $campaignType;
+        }
+
+        if (collect($tiers)->contains(fn ($tier) => (int) ($tier['referral_required_count'] ?? 0) > 0)) {
+            return 'referral';
+        }
+
+        return count($tiers) > 1 ? 'tiered' : 'standard';
+    }
+
+    private function expireCouponsIfNeeded(?array $couponIds = null): void
+    {
+        $now = now()->toDateTimeString();
+
+        Coupon::query()
+            ->when($couponIds, fn ($query) => $query->whereIn('id', $couponIds))
+            ->where('status', '!=', 'inactive')
+            ->whereNotNull('end_date')
+            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+            ->update([
+                'status' => 'inactive',
+                'updated_at' => now(),
+            ]);
     }
 
     public function listHighlights()
