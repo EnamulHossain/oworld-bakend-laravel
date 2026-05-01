@@ -30,7 +30,11 @@ class AuthController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'full_name' => ['nullable', 'string', 'max:120'],
             'dob' => ['nullable', 'date'],
+            'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'about' => ['nullable', 'string', 'max:1000'],
+            'signup_source' => ['nullable', 'string', 'max:50'],
+            'signup_referrer' => ['nullable', 'string', 'max:500'],
+            'signup_utm_campaign' => ['nullable', 'string', 'max:150'],
         ]);
 
         $role = $data['role'] ?? 'user';
@@ -53,7 +57,11 @@ class AuthController extends Controller
             'phone' => $data['phone'] ?? null,
             'full_name' => $data['full_name'] ?? null,
             'dob' => $data['dob'] ?? null,
+            'gender' => $data['gender'] ?? null,
             'about' => $data['about'] ?? null,
+            'signup_source' => $this->sanitizeSignupSource($data['signup_source'] ?? null),
+            'signup_referrer' => $data['signup_referrer'] ?? null,
+            'signup_utm_campaign' => $data['signup_utm_campaign'] ?? null,
         ]);
 
         Role::firstOrCreate(['name' => $role, 'guard_name' => 'sanctum']);
@@ -156,6 +164,9 @@ class AuthController extends Controller
         $state = $this->encodeState([
             'redirect' => $frontendRedirect,
             'role' => $this->sanitizeRole($request->query('role')),
+            'signup_source' => $this->sanitizeSignupSource($request->query('signup_source')),
+            'signup_referrer' => $request->query('signup_referrer'),
+            'signup_utm_campaign' => $request->query('signup_utm_campaign'),
         ]);
 
         $redirectUrl = $this->googleProvider($request)
@@ -208,7 +219,7 @@ class AuthController extends Controller
             ->first();
 
         if (!$user) {
-            $user = $this->createUserFromGoogle($googleUser, $role);
+            $user = $this->createUserFromGoogle($googleUser, $role, $state);
         } else {
             $user->forceFill([
             'google_id' => $user->google_id ?: $googleUser->getId(),
@@ -245,7 +256,7 @@ class AuthController extends Controller
         ]);
     }
 
-    private function createUserFromGoogle($googleUser, string $role): User
+    private function createUserFromGoogle($googleUser, string $role, array $state = []): User
     {
         $validatedRole = $this->sanitizeRole($role);
         $username = $this->generateUniqueUsername(
@@ -261,6 +272,9 @@ class AuthController extends Controller
             'full_name' => $googleUser->getName(),
             'google_id' => $googleUser->getId(),
             'avatar' => $googleUser->getAvatar(),
+            'signup_source' => $this->sanitizeSignupSource($state['signup_source'] ?? null) ?: 'google',
+            'signup_referrer' => $state['signup_referrer'] ?? null,
+            'signup_utm_campaign' => $state['signup_utm_campaign'] ?? null,
         ]);
 
         Role::firstOrCreate(['name' => $validatedRole, 'guard_name' => 'sanctum']);
@@ -272,6 +286,23 @@ class AuthController extends Controller
     private function sanitizeRole(?string $role): string
     {
         return in_array($role, ['user', 'organization'], true) ? $role : 'user';
+    }
+
+    private function sanitizeSignupSource(?string $source): ?string
+    {
+        if (!$source) {
+            return null;
+        }
+
+        $source = Str::lower(trim($source));
+        $source = match ($source) {
+            'fb', 'facebook.com', 'm.facebook.com', 'l.facebook.com', 'lm.facebook.com' => 'facebook',
+            'ig', 'instagram.com', 'l.instagram.com' => 'instagram',
+            'google.com', 'www.google.com' => 'google',
+            default => $source,
+        };
+
+        return Str::limit(preg_replace('/[^a-z0-9_-]+/', '-', $source), 50, '');
     }
 
     private function generateTemporaryPassword(): string

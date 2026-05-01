@@ -39,6 +39,16 @@
                                 <label class="text-sm font-semibold text-slate-800">Date of birth</label>
                                 <input value="{{ old('dob') }}" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" type="date" name="dob">
                             </div>
+                            <div class="space-y-2">
+                                <label class="text-sm font-semibold text-slate-800">Gender</label>
+                                <select name="gender" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" required>
+                                    <option value="" disabled {{ old('gender') ? '' : 'selected' }}>Select your gender</option>
+                                    <option value="male" {{ old('gender') === 'male' ? 'selected' : '' }}>Male</option>
+                                    <option value="female" {{ old('gender') === 'female' ? 'selected' : '' }}>Female</option>
+                                    <option value="other" {{ old('gender') === 'other' ? 'selected' : '' }}>Other</option>
+                                    <option value="prefer_not_to_say" {{ old('gender') === 'prefer_not_to_say' ? 'selected' : '' }}>Prefer not to say</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="grid gap-4 sm:grid-cols-2">
                             <div class="space-y-2">
