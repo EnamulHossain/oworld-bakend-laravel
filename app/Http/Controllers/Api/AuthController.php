@@ -33,7 +33,11 @@ class AuthController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'full_name' => ['nullable', 'string', 'max:120'],
             'dob' => ['nullable', 'date'],
+            'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'about' => ['nullable', 'string', 'max:1000'],
+            'signup_source' => ['nullable', 'string', 'max:50'],
+            'signup_referrer' => ['nullable', 'string', 'max:500'],
+            'signup_utm_campaign' => ['nullable', 'string', 'max:150'],
         ]);
 
         $role = $data['role'] ?? 'user';
@@ -66,6 +70,7 @@ class AuthController extends Controller
                 'business_type' => $data['business_type'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'full_name' => $data['full_name'] ?? null,
+                'gender' => $data['gender'] ?? null,
                 'dob' => $data['dob'] ?? null,
                 'about' => $data['about'] ?? null,
                 'referral_code' => $this->generateUniqueReferralCode($data['username']),
@@ -196,6 +201,9 @@ class AuthController extends Controller
             'redirect' => $frontendRedirect,
             'role' => $this->sanitizeRole($request->query('role')),
             'referral_code' => trim((string) $request->query('referral_code', '')) ?: null,
+            'signup_source' => $this->sanitizeSignupSource($request->query('signup_source')),
+            'signup_referrer' => $request->query('signup_referrer'),
+            'signup_utm_campaign' => $request->query('signup_utm_campaign'),
         ]);
 
         $redirectUrl = $this->googleProvider($request)
@@ -324,6 +332,23 @@ class AuthController extends Controller
     private function sanitizeRole(?string $role): string
     {
         return in_array($role, ['user', 'organization'], true) ? $role : 'user';
+    }
+
+    private function sanitizeSignupSource(?string $source): ?string
+    {
+        if (!$source) {
+            return null;
+        }
+
+        $source = Str::lower(trim($source));
+        $source = match ($source) {
+            'fb', 'facebook.com', 'm.facebook.com', 'l.facebook.com', 'lm.facebook.com' => 'facebook',
+            'ig', 'instagram.com', 'l.instagram.com' => 'instagram',
+            'google.com', 'www.google.com' => 'google',
+            default => $source,
+        };
+
+        return Str::limit(preg_replace('/[^a-z0-9_-]+/', '-', $source), 50, '');
     }
 
     private function generateTemporaryPassword(): string

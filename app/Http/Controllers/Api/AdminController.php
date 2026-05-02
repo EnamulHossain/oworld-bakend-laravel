@@ -310,8 +310,96 @@ class AdminController extends Controller
                 'adminCount' => User::where('role', 'admin')->count(),
                 'organizationCount' => User::where('role', 'organization')->count(),
                 'userCount' => User::where('role', 'user')->count(),
+                'ageRatio' => $this->ageRatioStats(),
+                'thisWeekUsers' => User::whereBetween('created_at', [
+                    now()->startOfWeek(),
+                    now()->endOfWeek(),
+                ])->count(),
+                'activeOffers' => Offer::where('status', 'active')->count(),
+                'publishedEvents' => Event::where('status', 'published')->count(),
+                'activeCategories' => Category::where('status', 'active')->count(),
+                'signupSources' => $this->signupSourceStats(),
             ],
         ]);
+    }
+
+    private function signupSourceStats(): array
+    {
+        $sources = [
+            'facebook' => 0,
+            'instagram' => 0,
+            'google' => 0,
+            'direct' => 0,
+        ];
+
+        User::query()
+            ->select('signup_source', 'google_id')
+            ->get()
+            ->each(function (User $user) use (&$sources) {
+                $source = $user->signup_source ?: ($user->google_id ? 'google' : 'direct');
+                if (!array_key_exists($source, $sources)) {
+                    $source = 'direct';
+                }
+                $sources[$source]++;
+            });
+
+        return collect($sources)
+            ->map(fn ($count, $source) => [
+                'source' => $source,
+                'label' => match ($source) {
+                    'facebook' => 'Facebook',
+                    'instagram' => 'Instagram',
+                    'google' => 'Google',
+                    default => 'Direct / Unknown',
+                },
+                'count' => $count,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function ageRatioStats(): array
+    {
+        $buckets = [
+            'Under 18' => 0,
+            '18-24' => 0,
+            '25-34' => 0,
+            '35-44' => 0,
+            '45+' => 0,
+            'Unknown' => 0,
+        ];
+
+        User::query()
+            ->select('dob')
+            ->get()
+            ->each(function (User $user) use (&$buckets) {
+                if (!$user->dob) {
+                    $buckets['Unknown']++;
+                    return;
+                }
+
+                $age = Carbon::parse($user->dob)->age;
+
+                if ($age < 18) {
+                    $buckets['Under 18']++;
+                } elseif ($age <= 24) {
+                    $buckets['18-24']++;
+                } elseif ($age <= 34) {
+                    $buckets['25-34']++;
+                } elseif ($age <= 44) {
+                    $buckets['35-44']++;
+                } else {
+                    $buckets['45+']++;
+                }
+            });
+
+        return collect($buckets)
+            ->map(fn ($count, $label) => [
+                'ageGroup' => $label,
+                'count' => $count,
+            ])
+            ->values()
+            ->all();
     }
 
     public function analyticsClicks(Request $request)
