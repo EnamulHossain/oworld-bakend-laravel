@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
 use App\Models\Attribute;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -53,6 +54,9 @@ class OrganizationController extends Controller
         }
         if ($request->query('type')) {
             $query->where('type', $request->query('type'));
+        }
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->query('category_id'));
         }
 
         $attributes = $query
@@ -101,7 +105,9 @@ class OrganizationController extends Controller
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['required', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['required', 'date', 'after:starting_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:50'],
@@ -117,6 +123,8 @@ class OrganizationController extends Controller
         if (!is_array($gallerySortOrder)) {
             $gallerySortOrder = [];
         }
+
+        $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
         $event = Event::create([
             ...$data,
@@ -148,7 +156,9 @@ class OrganizationController extends Controller
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
             'starting_date' => ['nullable', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['nullable', 'date', 'after:starting_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:50'],
@@ -170,6 +180,7 @@ class OrganizationController extends Controller
         if (array_key_exists('attributes', $data)) {
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
+        $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
         $event->update($data);
         return response()->json(['success' => true, 'event' => $event]);
@@ -379,6 +390,77 @@ class OrganizationController extends Controller
         }
 
         return $value;
+    }
+
+    private function normalizeDateAndTimeFields(array $data, string $dateFieldPrefix): array
+    {
+        $startDateField = $dateFieldPrefix;
+        $startTimeField = 'start_time';
+        $endDateField = 'end_date';
+        $endTimeField = 'end_time';
+
+        if (array_key_exists($startDateField, $data) && $data[$startDateField]) {
+            [$normalizedDate, $timeFromDate] = $this->extractDateAndTime((string) $data[$startDateField]);
+            $data[$startDateField] = $normalizedDate;
+            if (empty($data[$startTimeField]) && $timeFromDate !== null) {
+                $data[$startTimeField] = $timeFromDate;
+            }
+        }
+
+        if (array_key_exists($endDateField, $data) && $data[$endDateField]) {
+            [$normalizedDate, $timeFromDate] = $this->extractDateAndTime((string) $data[$endDateField]);
+            $data[$endDateField] = $normalizedDate;
+            if (empty($data[$endTimeField]) && $timeFromDate !== null) {
+                $data[$endTimeField] = $timeFromDate;
+            }
+        }
+
+        if (array_key_exists($startTimeField, $data)) {
+            $data[$startTimeField] = $this->normalizeTimeValue($data[$startTimeField]);
+        }
+        if (array_key_exists($endTimeField, $data)) {
+            $data[$endTimeField] = $this->normalizeTimeValue($data[$endTimeField]);
+        }
+
+        return $data;
+    }
+
+    private function extractDateAndTime(string $value): array
+    {
+        $raw = trim($value);
+        if ($raw === '') {
+            return [null, null];
+        }
+
+        $parsed = Carbon::parse($raw);
+        $date = $parsed->toDateString();
+        $hasExplicitTime = (bool) preg_match('/\d{1,2}:\d{2}/', $raw);
+        if (!$hasExplicitTime) {
+            return [$date, null];
+        }
+
+        $time = $parsed->format('H:i:s');
+        if (in_array($time, ['00:00:00', '23:59:59'], true)) {
+            return [$date, null];
+        }
+
+        return [$date, $time];
+    }
+
+    private function normalizeTimeValue($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+        $parsed = Carbon::parse($raw)->format('H:i:s');
+        if (in_array($parsed, ['00:00:00', '23:59:59'], true)) {
+            return null;
+        }
+        return $parsed;
     }
 
     private function normalizeAttributes($attributes): array

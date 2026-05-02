@@ -10,6 +10,9 @@ class Coupon extends BaseModel
 
     protected $fillable = [
         'name',
+        'image',
+        'description',
+        'campaign_type',
         'organization_id',
         'status',
         'start_date',
@@ -17,6 +20,7 @@ class Coupon extends BaseModel
         'end_date',
         'end_time',
         'total_coupon',
+        'usage_limit_per_user',
         'created_by',
         'updated_by',
     ];
@@ -25,6 +29,7 @@ class Coupon extends BaseModel
         'start_date' => 'date',
         'end_date' => 'date',
         'total_coupon' => 'integer',
+        'usage_limit_per_user' => 'integer',
     ];
 
     public function organization()
@@ -35,6 +40,11 @@ class Coupon extends BaseModel
     public function details()
     {
         return $this->hasMany(CouponDetail::class, 'coupon_id');
+    }
+
+    public function tiers()
+    {
+        return $this->hasMany(CouponTier::class, 'coupon_id')->orderBy('sort_order')->orderBy('id');
     }
 
     public function creator()

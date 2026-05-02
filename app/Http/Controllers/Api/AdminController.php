@@ -10,6 +10,7 @@ use App\Models\Category;
 use App\Models\ContentBlock;
 use App\Models\Coupon;
 use App\Models\CouponDetail;
+use App\Models\CouponTier;
 use App\Models\Event;
 use App\Models\HighlightReel;
 use App\Models\HighlightReelItem;
@@ -31,6 +32,11 @@ class AdminController extends Controller
 {
     public function users(Request $request)
     {
+        $columns = ['id', 'username', 'email', 'role', 'organization_name', 'created_at'];
+        if (Schema::hasColumn('users', 'status')) {
+            $columns[] = 'status';
+        }
+
         $users = User::query()
             ->when($request->query('role'), fn ($q, $role) => $q->where('role', $role))
             ->when($request->query('search'), function ($q, $term) {
@@ -40,7 +46,7 @@ class AdminController extends Controller
                 });
             })
             ->orderByDesc('created_at')
-            ->get(['id', 'username', 'email', 'role', 'organization_name', 'created_at']);
+            ->get($columns);
 
         return response()->json(['success' => true, 'users' => $users]);
     }
@@ -48,11 +54,119 @@ class AdminController extends Controller
     public function updateUserRole(Request $request, User $user)
     {
         $data = $request->validate([
-            'role' => ['required', Rule::in(['user', 'organization', 'admin'])],
+            'role' => ['required', Rule::in(['user', 'organization', 'admin', 'superAdmin'])],
         ]);
+
+        if ($data['role'] === 'superAdmin' && !$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can assign super admin role.'], 403);
+        }
+
+        if ($user->role === 'superAdmin' && !$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can modify this user.'], 403);
+        }
 
         $user->update(['role' => $data['role']]);
         $user->syncRoles([$data['role']]);
+
+        return response()->json(['success' => true, 'user' => $user]);
+    }
+
+    public function admins(Request $request)
+    {
+        $columns = ['id', 'username', 'email', 'role', 'created_at'];
+        if (Schema::hasColumn('users', 'status')) {
+            $columns[] = 'status';
+        }
+
+        $admins = User::query()
+            ->whereIn('role', ['admin', 'superAdmin'])
+            ->when($request->query('search'), function ($q, $term) {
+                $q->where(function ($inner) use ($term) {
+                    $inner->where('username', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%");
+                });
+            })
+            ->orderByDesc('created_at')
+            ->get($columns);
+
+        return response()->json(['success' => true, 'admins' => $admins]);
+    }
+
+    public function assignAdmin(Request $request, User $user)
+    {
+        if (!$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can assign admin users.'], 403);
+        }
+
+        $result = $this->promoteUserToAdmin($user);
+        if ($result !== true) {
+            return response()->json(['error' => $result], 422);
+        }
+
+        return response()->json(['success' => true, 'user' => $user]);
+    }
+
+    public function assignAdminsBulk(Request $request)
+    {
+        if (!$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can assign admin users.'], 403);
+        }
+
+        $data = $request->validate([
+            'user_ids' => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+        ]);
+
+        $users = User::query()
+            ->whereIn('id', $data['user_ids'])
+            ->get();
+
+        $updated = [];
+        $failed = [];
+
+        foreach ($users as $user) {
+            $result = $this->promoteUserToAdmin($user);
+            if ($result === true) {
+                $updated[] = $user->id;
+                continue;
+            }
+
+            $failed[] = [
+                'user_id' => $user->id,
+                'message' => $result,
+            ];
+        }
+
+        return response()->json([
+            'success' => count($failed) === 0,
+            'updated_user_ids' => $updated,
+            'failed' => $failed,
+        ]);
+    }
+
+    public function updateAdminStatus(Request $request, User $user)
+    {
+        if (!$this->isSuperAdmin($request)) {
+            return response()->json(['error' => 'Only super admin can update admin status.'], 403);
+        }
+
+        if (!in_array($user->role, ['admin', 'superAdmin'], true)) {
+            return response()->json(['error' => 'Target user is not an admin.'], 422);
+        }
+
+        if ($user->role === 'superAdmin') {
+            return response()->json(['error' => 'Super admin status cannot be changed.'], 422);
+        }
+
+        if (!Schema::hasColumn('users', 'status')) {
+            return response()->json(['error' => 'User status column is missing.'], 422);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['active', 'inactive'])],
+        ]);
+
+        $user->update(['status' => $data['status']]);
 
         return response()->json(['success' => true, 'user' => $user]);
     }
@@ -210,12 +324,13 @@ class AdminController extends Controller
         $startAt = now()->subDays($days)->startOfDay();
 
         $query = AnalyticsEvent::query()
-            ->whereIn('event_name', ['highlight_click', 'filter_click', 'filter_apply'])
+            ->whereIn('event_name', ['highlight_click', 'highlight_item_open', 'filter_click', 'filter_apply'])
             ->where('occurred_at', '>=', $startAt);
 
         $totals = [
             'tracked_events' => (clone $query)->count(),
             'highlight_clicks' => (clone $query)->where('event_name', 'highlight_click')->count(),
+            'highlight_opens' => (clone $query)->where('event_name', 'highlight_item_open')->count(),
             'filter_clicks' => (clone $query)->where('event_name', 'filter_click')->count(),
             'filter_applies' => (clone $query)->where('event_name', 'filter_apply')->count(),
         ];
@@ -231,31 +346,188 @@ class AdminController extends Controller
                 'total' => (int) $row->total,
             ])->values();
 
-        $highlightActions = AnalyticsEvent::query()
-            ->where('event_name', 'highlight_click')
+        $highlightEvents = AnalyticsEvent::query()
+            ->whereIn('event_name', ['highlight_click', 'highlight_item_open'])
             ->where('occurred_at', '>=', $startAt)
-            ->select('action', DB::raw('COUNT(*) as total'))
-            ->groupBy('action')
-            ->orderByDesc('total')
-            ->get()
-            ->map(fn ($row) => [
-                'action' => $row->action ?: 'unknown',
-                'total' => (int) $row->total,
-            ])->values();
+            ->get([
+                'id',
+                'event_name',
+                'page',
+                'action',
+                'highlight_id',
+                'offer_id',
+                'event_id',
+                'organization_id',
+                'metadata',
+                'occurred_at',
+            ]);
 
-        $filterActions = AnalyticsEvent::query()
-            ->where('event_name', 'filter_click')
+        $stringOrNull = static function ($value): ?string {
+            if ($value === null) {
+                return null;
+            }
+
+            $normalized = trim((string) $value);
+            return $normalized !== '' ? $normalized : null;
+        };
+
+        $resolveHighlightTitle = static function ($row, array $metadata) use ($stringOrNull): string {
+            return $stringOrNull(data_get($metadata, 'item_title'))
+                ?? $stringOrNull(data_get($metadata, 'item_subtitle'))
+                ?? $stringOrNull(data_get($metadata, 'highlight_title'))
+                ?? 'Unknown item';
+        };
+
+        $highlightActions = $highlightEvents
+            ->groupBy(function ($row) {
+                if ($row->event_name === 'highlight_item_open') {
+                    return 'open';
+                }
+
+                return $row->action ?: 'unknown';
+            })
+            ->map(fn ($rows, $action) => [
+                'action' => $action,
+                'total' => $rows->count(),
+            ])
+            ->sortByDesc('total')
+            ->values();
+
+        $highlightClicksByItem = $highlightEvents
+            ->filter(fn ($row) => $row->event_name === 'highlight_click')
+            ->groupBy(function ($row) {
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+                return implode('|', [
+                    $row->action ?: 'click',
+                    (string) ($row->highlight_id ?? ''),
+                    (string) ($row->offer_id ?? ''),
+                    (string) ($row->event_id ?? ''),
+                    (string) ($row->organization_id ?? ''),
+                    (string) data_get($metadata, 'item_title', ''),
+                    (string) data_get($metadata, 'item_subtitle', ''),
+                    (string) data_get($metadata, 'item_index', ''),
+                    (string) data_get($metadata, 'item_position', ''),
+                ]);
+            })
+            ->map(function ($rows) use ($resolveHighlightTitle, $stringOrNull) {
+                $row = $rows->first();
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+                $itemIndex = data_get($metadata, 'item_index');
+                $itemPosition = $stringOrNull(data_get($metadata, 'item_position'))
+                    ?? ($itemIndex ? 'Slide ' . $itemIndex : null);
+
+                return [
+                    'action' => $row->action ?: 'click',
+                    'highlight_id' => $row->highlight_id,
+                    'highlight_title' => $stringOrNull(data_get($metadata, 'highlight_title')) ?: 'Highlight',
+                    'item_title' => $resolveHighlightTitle($row, $metadata),
+                    'item_subtitle' => $stringOrNull(data_get($metadata, 'item_subtitle')),
+                    'item_index' => $itemIndex ? (int) $itemIndex : null,
+                    'item_position' => $itemPosition,
+                    'offer_id' => $row->offer_id,
+                    'event_id' => $row->event_id,
+                    'organization_id' => $row->organization_id,
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(15)
+            ->values();
+
+        $highlightOpensByItem = $highlightEvents
+            ->filter(fn ($row) => $row->event_name === 'highlight_item_open')
+            ->groupBy(function ($row) {
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+                return implode('|', [
+                    (string) ($row->highlight_id ?? ''),
+                    (string) ($row->offer_id ?? ''),
+                    (string) ($row->event_id ?? ''),
+                    (string) ($row->organization_id ?? ''),
+                    (string) data_get($metadata, 'item_title', ''),
+                    (string) data_get($metadata, 'item_subtitle', ''),
+                    (string) data_get($metadata, 'item_index', ''),
+                    (string) data_get($metadata, 'item_position', ''),
+                ]);
+            })
+            ->map(function ($rows) use ($resolveHighlightTitle, $stringOrNull) {
+                $row = $rows->first();
+                $metadata = is_array($row->metadata) ? $row->metadata : [];
+                $itemIndex = data_get($metadata, 'item_index');
+                $itemPosition = $stringOrNull(data_get($metadata, 'item_position'))
+                    ?? ($itemIndex ? 'Slide ' . $itemIndex : null);
+
+                return [
+                    'highlight_id' => $row->highlight_id,
+                    'highlight_title' => $stringOrNull(data_get($metadata, 'highlight_title')) ?: 'Highlight',
+                    'item_title' => $resolveHighlightTitle($row, $metadata),
+                    'item_subtitle' => $stringOrNull(data_get($metadata, 'item_subtitle')),
+                    'item_index' => $itemIndex ? (int) $itemIndex : null,
+                    'item_position' => $itemPosition,
+                    'offer_id' => $row->offer_id,
+                    'event_id' => $row->event_id,
+                    'organization_id' => $row->organization_id,
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(15)
+            ->values();
+
+        $filterEvents = AnalyticsEvent::query()
+            ->whereIn('event_name', ['filter_click', 'filter_apply'])
             ->where('occurred_at', '>=', $startAt)
-            ->select('filter', 'action', DB::raw('COUNT(*) as total'))
-            ->groupBy('filter', 'action')
-            ->orderByDesc('total')
-            ->limit(50)
             ->get()
-            ->map(fn ($row) => [
-                'filter' => $row->filter ?: 'unknown',
-                'action' => $row->action ?: 'unknown',
-                'total' => (int) $row->total,
-            ])->values();
+            ->map(function ($row) {
+                $row->metadata = is_array($row->metadata) ? $row->metadata : [];
+                return $row;
+            });
+
+        $filterActions = $filterEvents
+            ->filter(fn ($row) => $row->event_name === 'filter_click')
+            ->groupBy(function ($row) {
+                $label = data_get($row->metadata, 'filter_label') ?: data_get($row->metadata, 'attribute_name') ?: $row->filter ?: 'unknown';
+                return implode('|', [$row->filter ?: 'unknown', $label, $row->action ?: 'unknown']);
+            })
+            ->map(function ($rows) {
+                $row = $rows->first();
+                $label = data_get($row->metadata, 'filter_label') ?: data_get($row->metadata, 'attribute_name') ?: $row->filter ?: 'unknown';
+                return [
+                    'filter' => $row->filter ?: 'unknown',
+                    'filter_label' => $label,
+                    'action' => $row->action ?: 'unknown',
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(50)
+            ->values();
+
+        $filterDetails = $filterEvents
+            ->groupBy(function ($row) {
+                return implode('|', [
+                    $row->event_name ?: 'unknown',
+                    $row->filter ?: 'unknown',
+                    $row->action ?: 'unknown',
+                    (string) data_get($row->metadata, 'filter_label', ''),
+                    (string) data_get($row->metadata, 'attribute_name', ''),
+                    (string) data_get($row->metadata, 'filter_value', ''),
+                ]);
+            })
+            ->map(function ($rows) {
+                $row = $rows->first();
+                return [
+                    'event_name' => $row->event_name ?: 'unknown',
+                    'filter' => $row->filter ?: 'unknown',
+                    'filter_label' => data_get($row->metadata, 'filter_label') ?: data_get($row->metadata, 'attribute_name') ?: ($row->filter ?: 'unknown'),
+                    'action' => $row->action ?: ($row->event_name === 'filter_apply' ? 'apply' : 'unknown'),
+                    'attribute_name' => data_get($row->metadata, 'attribute_name'),
+                    'filter_value' => data_get($row->metadata, 'filter_value'),
+                    'total' => $rows->count(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(20)
+            ->values();
 
         $daily = (clone $query)
             ->select(DB::raw('DATE(occurred_at) as day'), DB::raw('COUNT(*) as total'))
@@ -278,6 +550,7 @@ class AdminController extends Controller
                 'offer_id',
                 'event_id',
                 'organization_id',
+                'metadata',
                 'occurred_at',
             ])
             ->latest('occurred_at')
@@ -290,7 +563,10 @@ class AdminController extends Controller
             'totals' => $totals,
             'by_page' => $byPage,
             'highlight_actions' => $highlightActions,
+            'highlight_click_items' => $highlightClicksByItem,
+            'highlight_open_items' => $highlightOpensByItem,
             'filter_actions' => $filterActions,
+            'filter_details' => $filterDetails,
             'daily' => $daily,
             'recent' => $recent,
         ]);
@@ -319,6 +595,7 @@ class AdminController extends Controller
             ->when($request->query('search'), function ($q, $term) {
                 $q->where('name', 'like', "%{$term}%");
             })
+            ->orderBy('order')
             ->orderBy('name')
             ->get();
 
@@ -329,6 +606,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:150', 'unique:areas,name'],
+            'order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $name = trim($data['name']);
@@ -336,7 +614,10 @@ class AdminController extends Controller
             return response()->json(['error' => 'Area name is required.'], 422);
         }
 
-        $area = Area::create(['name' => $name]);
+        $area = Area::create([
+            'name' => $name,
+            'order' => (int) ($data['order'] ?? 0),
+        ]);
 
         return response()->json(['success' => true, 'area' => $area], 201);
     }
@@ -345,6 +626,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:150', Rule::unique('areas', 'name')->ignore($area->id)],
+            'order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $name = trim($data['name']);
@@ -352,7 +634,10 @@ class AdminController extends Controller
             return response()->json(['error' => 'Area name is required.'], 422);
         }
 
-        $area->update(['name' => $name]);
+        $area->update([
+            'name' => $name,
+            'order' => (int) ($data['order'] ?? 0),
+        ]);
 
         return response()->json(['success' => true, 'area' => $area]);
     }
@@ -370,13 +655,24 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'short_name' => ['nullable', 'string', 'max:50'],
             'image' => ['nullable', 'string', 'max:500'],
+            'banner' => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
             'icon' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'description' => ['nullable', 'string'],
         ]);
 
+        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+        if (!is_array($gallerySortOrder)) {
+            $gallerySortOrder = [];
+        }
+
         $category = Category::create($data + ['created_by' => $request->user()->id]);
+        $category->update([
+            'banner' => $this->toArrayField($data['banner'] ?? []),
+            'gallery_sort_order' => $gallerySortOrder,
+        ]);
 
         return response()->json(['success' => true, 'category' => $category], 201);
     }
@@ -387,11 +683,21 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:100'],
             'short_name' => ['nullable', 'string', 'max:50'],
             'image' => ['nullable', 'string', 'max:500'],
+            'banner' => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
             'icon' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'description' => ['nullable', 'string'],
         ]);
+
+        if (array_key_exists('banner', $data)) {
+            $data['banner'] = $this->toArrayField($data['banner']);
+        }
+        if (array_key_exists('gallery_sort_order', $data)) {
+            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
+            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
+        }
 
         $category->update($data);
         return response()->json(['success' => true, 'category' => $category]);
@@ -419,7 +725,12 @@ class AdminController extends Controller
     public function listEvents(Request $request)
     {
         $query = Event::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with([
+                'organization:id,organization_name,username,phone',
+                'category:id,name',
+                'area:id,name',
+                'creator:id,username,full_name',
+            ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
@@ -596,7 +907,12 @@ class AdminController extends Controller
     public function listOffers(Request $request)
     {
         $query = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with([
+                'organization:id,organization_name,username,phone',
+                'category:id,name',
+                'area:id,name',
+                'creator:id,username,full_name',
+            ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -666,6 +982,11 @@ class AdminController extends Controller
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
                 'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
+                'is_recurring' => ['nullable', 'boolean'],
+                'recurring_start_date' => ['nullable', 'date'],
+                'recurring_end_date' => ['nullable', 'date'],
+                'recurring_days' => ['nullable', 'array'],
+                'recurring_days.*' => ['string'],
             ]);
 
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -674,11 +995,19 @@ class AdminController extends Controller
 
             $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+            $data = $this->normalizeOfferRecurringFields($data);
+            $this->validateOfferRecurringFields($data);
 
             $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
             if (!is_array($gallerySortOrder)) {
                 $gallerySortOrder = [];
             }
+            $images = $this->toArrayField($data['images'] ?? []);
+            $data['images'] = $images;
+            $data['thumbnail'] = $this->resolveOfferThumbnail(
+                $data['thumbnail'] ?? null,
+                $images
+            );
 
             $offer = DB::transaction(function () use ($data, $request, $gallerySortOrder) {
                 $requestedOrder = $data['sort_order'] ?? null;
@@ -692,7 +1021,7 @@ class AdminController extends Controller
                 $offer = Offer::create([
                     ...$data,
                     'sort_order' => $finalOrder,
-                    'images' => $this->toArrayField($data['images'] ?? []),
+                    'images' => $data['images'],
                     'gallery_sort_order' => $gallerySortOrder,
                     'videos' => $this->toArrayField($data['videos'] ?? []),
                     'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
@@ -762,6 +1091,11 @@ class AdminController extends Controller
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
                 'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
+                'is_recurring' => ['nullable', 'boolean'],
+                'recurring_start_date' => ['nullable', 'date'],
+                'recurring_end_date' => ['nullable', 'date'],
+                'recurring_days' => ['nullable', 'array'],
+                'recurring_days.*' => ['string'],
             ]);
 
             if (array_key_exists('serial', $data) && !array_key_exists('sort_order', $data)) {
@@ -770,6 +1104,8 @@ class AdminController extends Controller
 
             $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+            $data = $this->normalizeOfferRecurringFields($data);
+            $this->validateOfferRecurringFields($data, $offer);
 
             if (array_key_exists('images', $data)) {
                 $data['images'] = $this->toArrayField($data['images']);
@@ -783,6 +1119,15 @@ class AdminController extends Controller
             }
             if (array_key_exists('attributes', $data)) {
                 $data['attributes'] = $this->normalizeAttributes($data['attributes']);
+            }
+            if (
+                array_key_exists('thumbnail', $data)
+                || array_key_exists('images', $data)
+            ) {
+                $data['thumbnail'] = $this->resolveOfferThumbnail(
+                    $data['thumbnail'] ?? $offer->thumbnail,
+                    $data['images'] ?? $offer->images ?? []
+                );
             }
 
             DB::transaction(function () use ($data, $offer, $request) {
@@ -842,9 +1187,13 @@ class AdminController extends Controller
 
     public function listCoupons(Request $request)
     {
+        $this->expireCouponsIfNeeded();
+
         $query = Coupon::query()
             ->with([
                 'organization:id,organization_name,username',
+                'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+                'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
@@ -856,10 +1205,13 @@ class AdminController extends Controller
             ->orderByDesc('id');
 
         $coupons = $query->paginate((int) $request->query('limit', 50));
+        $items = collect($coupons->items())
+            ->map(fn (Coupon $coupon) => $this->formatCouponForResponse($coupon))
+            ->values();
 
         return response()->json([
             'success' => true,
-            'coupons' => $coupons->items(),
+            'coupons' => $items,
             'pagination' => [
                 'total' => $coupons->total(),
                 'per_page' => $coupons->perPage(),
@@ -871,66 +1223,382 @@ class AdminController extends Controller
 
     public function storeCoupon(Request $request)
     {
+        [$data, $tiers, $masterPayload, $organizationId] = $this->prepareCouponPayload($request);
+        $coupon = $this->saveCouponCampaign(null, $masterPayload, $tiers, $data, $request, $organizationId);
+
+        $this->expireCouponsIfNeeded([$coupon->id]);
+        $coupon->load([
+            'organization:id,organization_name,username',
+            'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+            'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
+        ]);
+
+        $responseCoupons = collect([$coupon])
+            ->map(fn (Coupon $item) => $this->formatCouponForResponse($item))
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'created_count' => $responseCoupons->count(),
+            'coupons' => $responseCoupons,
+        ], 201);
+    }
+
+    public function updateCoupon(Request $request, Coupon $coupon)
+    {
+        [$data, $tiers, $masterPayload, $organizationId] = $this->prepareCouponPayload($request, $coupon);
+        $coupon = $this->saveCouponCampaign($coupon, $masterPayload, $tiers, $data, $request, $organizationId);
+
+        $this->expireCouponsIfNeeded([$coupon->id]);
+        $coupon->load([
+            'organization:id,organization_name,username',
+            'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+            'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'coupon' => $this->formatCouponForResponse($coupon),
+        ]);
+    }
+
+    public function deleteCoupon(Coupon $coupon)
+    {
+        DB::transaction(function () use ($coupon) {
+            $coupon->details()->delete();
+            $coupon->tiers()->delete();
+            $coupon->delete();
+        });
+
+        return response()->json([
+            'success' => true,
+        ]);
+    }
+
+    public function uploadCouponImage(Request $request)
+    {
+        $request->validate([
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file('image')->store('uploads/coupons', 'public');
+
+        return response()->json([
+            'success' => true,
+            'imageUrl' => '/storage/' . $path,
+        ], 201);
+    }
+
+    private function prepareCouponPayload(Request $request, ?Coupon $coupon = null): array
+    {
         $data = $request->validate([
             'coupon_name' => ['required', 'string', 'max:200'],
+            'image' => ['nullable', 'string', 'max:500'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'campaign_type' => ['nullable', Rule::in(['standard', 'tiered', 'referral'])],
             'offer_id' => ['nullable', 'exists:offers,id'],
             'event_id' => ['nullable', 'exists:events,id'],
-            'organization_id' => ['nullable', 'exists:users,id'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
             'start_date' => ['nullable', 'date'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
-            'coupon_no' => ['required', 'integer', 'min:1', 'max:1000'],
+            'coupon_no' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'usage_limit_per_user' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'discount_type' => ['nullable', Rule::in(['percentage', 'flat'])],
+            'discount_value' => ['nullable', 'numeric', 'min:0.01'],
+            'max_discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'min_order_amount' => ['nullable', 'numeric', 'min:0'],
+            'referral_required_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'tiers' => ['nullable', 'array', 'min:1', 'max:20'],
+            'tiers.*.label' => ['nullable', 'string', 'max:120'],
+            'tiers.*.quantity' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'tiers.*.discount_type' => ['nullable', Rule::in(['percentage', 'flat'])],
+            'tiers.*.discount_value' => ['nullable', 'numeric', 'min:0.01'],
+            'tiers.*.max_discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'tiers.*.min_order_amount' => ['nullable', 'numeric', 'min:0'],
+            'tiers.*.referral_required_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
         $data = $this->normalizeDateAndTimeFields($data, 'start_date');
-        $couponCount = (int) ($data['coupon_no'] ?? 1);
+        $this->validateCouponTargetFields($data);
+        $tiers = $this->normalizeCouponTierPayload($data);
+        $this->validateCouponTierPayload($tiers, $data['campaign_type'] ?? null, $data['coupon_no'] ?? null);
+        $couponCount = (int) collect($tiers)->sum('quantity');
+        $campaignType = $this->resolveCouponCampaignType($tiers, $data['campaign_type'] ?? null);
+        $organizationId = $this->resolveCouponOrganizationId($data);
+
         $masterPayload = [
             'name' => trim((string) $data['coupon_name']),
-            'organization_id' => $data['organization_id'] ?? null,
-            'status' => $data['status'] ?? 'draft',
+            'image' => trim((string) ($data['image'] ?? '')) ?: null,
+            'description' => trim((string) ($data['description'] ?? '')) ?: null,
+            'campaign_type' => $campaignType,
+            'organization_id' => $organizationId,
+            'status' => $data['status'] ?? ($coupon?->status ?? 'draft'),
             'start_date' => $data['start_date'] ?? null,
             'start_time' => $data['start_time'] ?? null,
             'end_date' => $data['end_date'] ?? null,
             'end_time' => $data['end_time'] ?? null,
             'total_coupon' => $couponCount,
-            'created_by' => $request->user()->id,
+            'usage_limit_per_user' => $data['usage_limit_per_user'] ?? 1,
             'updated_by' => $request->user()->id,
         ];
 
-        $detailPayload = [
-            'offer_id' => $data['offer_id'] ?? null,
-            'event_id' => $data['event_id'] ?? null,
-            'organization_id' => $data['organization_id'] ?? null,
-            'created_by' => $request->user()->id,
-            'updated_by' => $request->user()->id,
-            'is_used' => false,
-            'used_at' => null,
-        ];
+        if (!$coupon) {
+            $masterPayload['created_by'] = $request->user()->id;
+        }
 
-        $createdCoupons = DB::transaction(function () use ($couponCount, $masterPayload, $detailPayload) {
-            $master = Coupon::create($masterPayload);
+        return [$data, $tiers, $masterPayload, $organizationId];
+    }
 
-            for ($index = 0; $index < $couponCount; $index++) {
-                CouponDetail::create([
-                    ...$detailPayload,
-                    'coupon_id' => $master->id,
-                    'coupon' => $this->generateUniqueCouponCode(),
-                ]);
+    private function saveCouponCampaign(?Coupon $coupon, array $masterPayload, array $tiers, array $data, Request $request, ?int $organizationId): Coupon
+    {
+        return DB::transaction(function () use ($coupon, $masterPayload, $tiers, $data, $request, $organizationId) {
+            $master = $coupon;
+
+            if ($master) {
+                $hasLockedCodes = $master->details()
+                    ->where(function ($query) {
+                        $query->whereNotNull('claimed_by_user_id')
+                            ->orWhereNotNull('claimed_at')
+                            ->orWhere('is_used', true)
+                            ->orWhereNotNull('user_id')
+                            ->orWhereNotNull('used_at');
+                    })
+                    ->exists();
+
+                if ($hasLockedCodes) {
+                    throw ValidationException::withMessages([
+                        'coupon' => 'Coupons that have claimed or used codes cannot be edited.',
+                    ]);
+                }
+
+                $master->update($masterPayload);
+                $master->details()->delete();
+                $master->tiers()->delete();
+            } else {
+                $master = Coupon::create($masterPayload);
             }
 
-            return Coupon::query()
-                ->with(['organization:id,organization_name,username'])
-                ->where('id', $master->id)
-                ->get();
-        });
+            foreach ($tiers as $index => $tierData) {
+                $tier = CouponTier::create([
+                    'coupon_id' => $master->id,
+                    'label' => $tierData['label'] ?: sprintf('Tier %d', $index + 1),
+                    'quantity' => $tierData['quantity'],
+                    'discount_type' => $tierData['discount_type'],
+                    'discount_value' => $tierData['discount_value'],
+                    'max_discount_amount' => $tierData['max_discount_amount'],
+                    'min_order_amount' => $tierData['min_order_amount'],
+                    'referral_required_count' => $tierData['referral_required_count'],
+                    'sort_order' => $index,
+                    'created_by' => $master->created_by ?: $request->user()->id,
+                    'updated_by' => $request->user()->id,
+                ]);
 
-        return response()->json([
-            'success' => true,
-            'created_count' => $createdCoupons->count(),
-            'coupons' => $createdCoupons->values(),
-        ], 201);
+                for ($codeIndex = 0; $codeIndex < $tierData['quantity']; $codeIndex++) {
+                    CouponDetail::create([
+                        'coupon_id' => $master->id,
+                        'coupon_tier_id' => $tier->id,
+                        'coupon' => $this->generateUniqueCouponCode(),
+                        'offer_id' => $data['offer_id'] ?? null,
+                        'event_id' => $data['event_id'] ?? null,
+                        'organization_id' => $organizationId,
+                        'discount_type' => $tierData['discount_type'],
+                        'discount_value' => $tierData['discount_value'],
+                        'max_discount_amount' => $tierData['max_discount_amount'],
+                        'min_order_amount' => $tierData['min_order_amount'],
+                        'referral_required_count' => $tierData['referral_required_count'],
+                        'claimed_by_user_id' => null,
+                        'claimed_at' => null,
+                        'created_by' => $master->created_by ?: $request->user()->id,
+                        'updated_by' => $request->user()->id,
+                        'is_used' => false,
+                        'used_at' => null,
+                    ]);
+                }
+            }
+
+            return $master;
+        });
+    }
+
+    private function formatCouponForResponse(Coupon $coupon): array
+    {
+        $firstDetail = $coupon->details->first();
+        $data = $coupon->toArray();
+        unset($data['details']);
+
+        $data['coupon_name'] = $coupon->name;
+        $data['coupon_no'] = (int) ($coupon->total_coupon ?? 1);
+        $data['offer_id'] = $firstDetail?->offer_id;
+        $data['event_id'] = $firstDetail?->event_id;
+        $data['claimed_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => !empty($detail->claimed_by_user_id) || !empty($detail->claimed_at))->count();
+        $data['used_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => (bool) $detail->is_used)->count();
+        $data['tiers'] = $coupon->tiers
+            ->map(fn (CouponTier $tier) => [
+                'id' => $tier->id,
+                'label' => $tier->label,
+                'quantity' => (int) ($tier->quantity ?? 0),
+                'discount_type' => $tier->discount_type,
+                'discount_value' => $tier->discount_value !== null ? (float) $tier->discount_value : null,
+                'max_discount_amount' => $tier->max_discount_amount !== null ? (float) $tier->max_discount_amount : null,
+                'min_order_amount' => $tier->min_order_amount !== null ? (float) $tier->min_order_amount : null,
+                'referral_required_count' => (int) ($tier->referral_required_count ?? 0),
+                'sort_order' => (int) ($tier->sort_order ?? 0),
+            ])
+            ->values()
+            ->all();
+
+        $firstTier = $coupon->tiers->first();
+        $data['discount_type'] = $firstTier?->discount_type;
+        $data['discount_value'] = $firstTier?->discount_value !== null ? (float) $firstTier->discount_value : null;
+        $data['max_discount_amount'] = $firstTier?->max_discount_amount !== null ? (float) $firstTier->max_discount_amount : null;
+        $data['min_order_amount'] = $firstTier?->min_order_amount !== null ? (float) $firstTier->min_order_amount : null;
+        $data['referral_required_count'] = (int) ($firstTier?->referral_required_count ?? 0);
+
+        if (empty($data['organization_id']) && $firstDetail?->organization_id) {
+            $data['organization_id'] = $firstDetail->organization_id;
+        }
+
+        return $data;
+    }
+
+    private function validateCouponTargetFields(array $data): void
+    {
+        $targets = array_filter([
+            $data['offer_id'] ?? null,
+            $data['event_id'] ?? null,
+        ], fn ($value) => !empty($value));
+
+        if (count($targets) > 1) {
+            throw ValidationException::withMessages([
+                'target' => 'A coupon campaign can target either one offer or one event, not both at the same time.',
+            ]);
+        }
+    }
+
+    private function resolveCouponOrganizationId(array $data): ?int
+    {
+        $offerId = !empty($data['offer_id']) ? (int) $data['offer_id'] : null;
+        if ($offerId) {
+            return Offer::query()->whereKey($offerId)->value('organization_id');
+        }
+
+        $eventId = !empty($data['event_id']) ? (int) $data['event_id'] : null;
+        if ($eventId) {
+            return Event::query()->whereKey($eventId)->value('organization_id');
+        }
+
+        return null;
+    }
+
+    private function normalizeCouponTierPayload(array $data): array
+    {
+        $rawTiers = collect($data['tiers'] ?? [])->filter(fn ($tier) => is_array($tier))->values();
+
+        if ($rawTiers->isEmpty()) {
+            $rawTiers = collect([[
+                'label' => 'Base tier',
+                'quantity' => $data['coupon_no'] ?? 1,
+                'discount_type' => $data['discount_type'] ?? null,
+                'discount_value' => $data['discount_value'] ?? null,
+                'max_discount_amount' => $data['max_discount_amount'] ?? null,
+                'min_order_amount' => $data['min_order_amount'] ?? null,
+                'referral_required_count' => $data['referral_required_count'] ?? 0,
+            ]]);
+        }
+
+        return $rawTiers
+            ->map(function (array $tier, int $index) {
+                return [
+                    'label' => trim((string) ($tier['label'] ?? '')),
+                    'quantity' => (int) ($tier['quantity'] ?? 0),
+                    'discount_type' => $tier['discount_type'] ?? null,
+                    'discount_value' => isset($tier['discount_value']) ? (float) $tier['discount_value'] : null,
+                    'max_discount_amount' => isset($tier['max_discount_amount']) && $tier['max_discount_amount'] !== ''
+                        ? (float) $tier['max_discount_amount']
+                        : null,
+                    'min_order_amount' => isset($tier['min_order_amount']) && $tier['min_order_amount'] !== ''
+                        ? (float) $tier['min_order_amount']
+                        : null,
+                    'referral_required_count' => max(0, (int) ($tier['referral_required_count'] ?? 0)),
+                    'sort_order' => $index,
+                ];
+            })
+            ->all();
+    }
+
+    private function validateCouponTierPayload(array $tiers, ?string $campaignType = null, ?int $totalCouponLimit = null): void
+    {
+        $messages = [];
+
+        foreach ($tiers as $index => $tier) {
+            $path = "tiers.$index";
+            if (($tier['quantity'] ?? 0) < 1) {
+                $messages["$path.quantity"] = 'Each coupon tier must have at least one code.';
+            }
+
+            if (!in_array($tier['discount_type'] ?? null, ['percentage', 'flat'], true)) {
+                $messages["$path.discount_type"] = 'Coupon discount type must be percentage or flat.';
+            }
+
+            if (($tier['discount_value'] ?? 0) <= 0) {
+                $messages["$path.discount_value"] = 'Coupon discount value must be greater than zero.';
+            }
+
+            if (($tier['discount_type'] ?? null) === 'percentage' && ($tier['discount_value'] ?? 0) > 100) {
+                $messages["$path.discount_value"] = 'Percentage discounts cannot exceed 100.';
+            }
+        }
+
+        if ($tiers === []) {
+            $messages['tiers'] = 'At least one coupon tier is required.';
+        }
+
+        $totalQuantity = (int) collect($tiers)->sum(fn ($tier) => (int) ($tier['quantity'] ?? 0));
+        if ($totalCouponLimit !== null && $totalQuantity > $totalCouponLimit) {
+            $messages['coupon_no'] = 'Tier code count cannot be greater than total codes.';
+        }
+
+        if ($campaignType === 'tiered' && $totalCouponLimit !== null && $totalQuantity !== $totalCouponLimit) {
+            $messages['coupon_no'] = 'For tiered campaigns, total codes must match the sum of tier codes.';
+        }
+
+        if ($campaignType === 'referral' && !collect($tiers)->contains(fn ($tier) => (int) ($tier['referral_required_count'] ?? 0) > 0)) {
+            $messages['tiers'] = 'Referral campaigns must require at least one referral on one tier.';
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+    }
+
+    private function resolveCouponCampaignType(array $tiers, ?string $campaignType = null): string
+    {
+        if ($campaignType) {
+            return $campaignType;
+        }
+
+        if (collect($tiers)->contains(fn ($tier) => (int) ($tier['referral_required_count'] ?? 0) > 0)) {
+            return 'referral';
+        }
+
+        return count($tiers) > 1 ? 'tiered' : 'standard';
+    }
+
+    private function expireCouponsIfNeeded(?array $couponIds = null): void
+    {
+        $now = now()->toDateTimeString();
+
+        Coupon::query()
+            ->when($couponIds, fn ($query) => $query->whereIn('id', $couponIds))
+            ->where('status', '!=', 'inactive')
+            ->whereNotNull('end_date')
+            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+            ->update([
+                'status' => 'inactive',
+                'updated_at' => now(),
+            ]);
     }
 
     public function listHighlights()
@@ -1476,7 +2144,7 @@ class AdminController extends Controller
             ->with(['values' => fn ($q) => $q->orderBy('id')]);
 
         if ($request->boolean('with_categories')) {
-            $query->with(['categories:id,name']);
+            $query->with(['category:id,name']);
         }
 
         if ($request->query('search')) {
@@ -1487,11 +2155,16 @@ class AdminController extends Controller
         if ($request->query('type')) {
             $query->where('type', $request->query('type'));
         }
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->query('category_id'));
+        }
         if ($request->query('status')) {
             $query->where('status', $request->query('status'));
         }
 
         $attributes = $query
+            ->orderByRaw('category_id IS NULL')
+            ->orderBy('category_id')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->orderBy('id')
@@ -1508,17 +2181,19 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'draft', 'inactive'])],
             'values' => ['nullable', 'array'],
-            'category_ids' => ['nullable', 'array'],
-            'category_ids.*' => ['integer', 'exists:categories,id'],
         ]);
 
         return DB::transaction(function () use ($data) {
+            $type = $data['type'];
+            $categoryId = $type === 'offer' ? ($data['category_id'] ?? null) : null;
             $attribute = Attribute::create([
                 'name' => $data['name'],
-                'type' => $data['type'],
+                'type' => $type,
+                'category_id' => $categoryId,
                 'sort_order' => (int) ($data['sort_order'] ?? 0),
                 'status' => $data['status'] ?? 'active',
             ]);
@@ -1528,11 +2203,10 @@ class AdminController extends Controller
                 $attribute->values()->createMany($values);
             }
 
-            if (!empty($data['category_ids'])) {
-                $attribute->categories()->sync($data['category_ids']);
-            }
-
-            $attribute->load(['values' => fn ($q) => $q->orderBy('id')]);
+            $attribute->load([
+                'values' => fn ($q) => $q->orderBy('id'),
+                'category:id,name',
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -1546,11 +2220,10 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'status' => ['sometimes', Rule::in(['active', 'draft', 'inactive'])],
             'values' => ['nullable', 'array'],
-            'category_ids' => ['nullable', 'array'],
-            'category_ids.*' => ['integer', 'exists:categories,id'],
         ]);
 
         return DB::transaction(function () use ($data, $attribute) {
@@ -1559,6 +2232,12 @@ class AdminController extends Controller
             }
             if (array_key_exists('type', $data)) {
                 $attribute->type = $data['type'];
+            }
+            if (array_key_exists('category_id', $data)) {
+                $attribute->category_id = $data['category_id'];
+            }
+            if (($attribute->type ?? 'event') !== 'offer') {
+                $attribute->category_id = null;
             }
             if (array_key_exists('sort_order', $data)) {
                 $attribute->sort_order = (int) ($data['sort_order'] ?? 0);
@@ -1570,38 +2249,45 @@ class AdminController extends Controller
 
             if (array_key_exists('values', $data)) {
                 $values = $this->normalizeAttributeValues($data['values'] ?? []);
-                if (!empty($values)) {
-                    $existingValues = $attribute->values()->get();
-                    $existingByKey = $existingValues->keyBy(
-                        fn ($item) => $this->normalizeAttributeValueKey((string) ($item->value ?? ''))
-                    );
-                    $seen = [];
+                $existingValues = $attribute->values()->get();
+                $existingByKey = $existingValues->keyBy(
+                    fn ($item) => $this->normalizeAttributeValueKey((string) ($item->value ?? ''))
+                );
+                $seen = [];
 
-                    foreach ($values as $valuePayload) {
-                        $key = $this->normalizeAttributeValueKey((string) ($valuePayload['value'] ?? ''));
-                        if ($key === '' || isset($seen[$key])) {
-                            continue;
-                        }
-                        $seen[$key] = true;
-
-                        $existing = $existingByKey->get($key);
-                        if ($existing) {
-                            $existing->update([
-                                'color_code' => $valuePayload['color_code'] ?? null,
-                            ]);
-                            continue;
-                        }
-
-                        $attribute->values()->create($valuePayload);
+                foreach ($values as $valuePayload) {
+                    $key = $this->normalizeAttributeValueKey((string) ($valuePayload['value'] ?? ''));
+                    if ($key === '' || isset($seen[$key])) {
+                        continue;
                     }
+                    $seen[$key] = true;
+
+                    $existing = $existingByKey->get($key);
+                    if ($existing) {
+                        $existing->update([
+                            'color_code' => $valuePayload['color_code'] ?? null,
+                        ]);
+                        continue;
+                    }
+
+                    $attribute->values()->create($valuePayload);
+                }
+
+                if (!empty($seen)) {
+                    $attribute->values()
+                        ->whereNotIn('id', $existingValues
+                            ->filter(fn ($item) => isset($seen[$this->normalizeAttributeValueKey((string) ($item->value ?? ''))]))
+                            ->pluck('id'))
+                        ->delete();
+                } else {
+                    $attribute->values()->delete();
                 }
             }
 
-            if (array_key_exists('category_ids', $data)) {
-                $attribute->categories()->sync($data['category_ids'] ?? []);
-            }
-
-            $attribute->load(['values' => fn ($q) => $q->orderBy('id')]);
+            $attribute->load([
+                'values' => fn ($q) => $q->orderBy('id'),
+                'category:id,name',
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -1625,6 +2311,23 @@ class AdminController extends Controller
         } while (CouponDetail::where('coupon', $code)->exists());
 
         return $code;
+    }
+
+    private function resolveOfferThumbnail($thumbnail, array $images): ?string
+    {
+        $thumbnailValue = is_string($thumbnail) ? trim($thumbnail) : '';
+        if ($thumbnailValue !== '') {
+            return $thumbnailValue;
+        }
+
+        foreach ($images as $image) {
+            $imageValue = is_string($image) ? trim($image) : '';
+            if ($imageValue !== '') {
+                return $imageValue;
+            }
+        }
+
+        return null;
     }
 
     private function findExistingOrganization(string $organizationName): ?User
@@ -1767,6 +2470,132 @@ class AdminController extends Controller
         }
 
         return $data;
+    }
+
+    private function normalizeOfferRecurringFields(array $data): array
+    {
+        if (array_key_exists('is_recurring', $data)) {
+            $data['is_recurring'] = filter_var($data['is_recurring'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+        }
+
+        foreach (['recurring_start_date', 'recurring_end_date'] as $field) {
+            if (!array_key_exists($field, $data) || empty($data[$field])) {
+                continue;
+            }
+
+            [$normalizedDate] = $this->extractDateAndTime((string) $data[$field]);
+            $data[$field] = $normalizedDate;
+        }
+
+        if (array_key_exists('recurring_days', $data)) {
+            $rawRecurringDays = $this->normalizeJsonField($data['recurring_days']);
+            $data['recurring_days'] = $this->normalizeRecurringDays(is_array($rawRecurringDays) ? $rawRecurringDays : []);
+        }
+
+        return $data;
+    }
+
+    private function validateOfferRecurringFields(array &$data, ?Offer $offer = null): void
+    {
+        $isRecurring = array_key_exists('is_recurring', $data)
+            ? (bool) $data['is_recurring']
+            : (bool) ($offer?->is_recurring);
+
+        if (!$isRecurring) {
+            $data['is_recurring'] = false;
+            $data['recurring_start_date'] = null;
+            $data['recurring_end_date'] = null;
+            $data['recurring_days'] = [];
+            return;
+        }
+
+        $startDate = $data['start_date'] ?? $offer?->start_date?->format('Y-m-d');
+        $endDate = $data['end_date'] ?? $offer?->end_date?->format('Y-m-d');
+        $recurringStart = $data['recurring_start_date'] ?? $offer?->recurring_start_date?->format('Y-m-d');
+        $recurringEnd = $data['recurring_end_date'] ?? $offer?->recurring_end_date?->format('Y-m-d');
+        $recurringDays = $this->normalizeRecurringDays($data['recurring_days'] ?? $offer?->recurring_days ?? []);
+
+        $messages = [];
+
+        if (!$recurringStart) {
+            $messages['recurring_start_date'] = 'Recurring start date is required when recurring is enabled.';
+        }
+
+        if (!$recurringEnd) {
+            $messages['recurring_end_date'] = 'Recurring end date is required when recurring is enabled.';
+        }
+
+        if ($recurringDays === []) {
+            $messages['recurring_days'] = 'At least one recurring day is required when recurring is enabled.';
+        }
+
+        if (!$startDate || !$endDate) {
+            $messages['start_date'] = 'Offer start date and end date are required for recurring offers.';
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+
+        $offerStart = Carbon::parse($startDate)->startOfDay();
+        $offerEnd = Carbon::parse($endDate)->startOfDay();
+        $recurringStartDate = Carbon::parse($recurringStart)->startOfDay();
+        $recurringEndDate = Carbon::parse($recurringEnd)->startOfDay();
+
+        if ($recurringEndDate->lt($recurringStartDate)) {
+            $messages['recurring_end_date'] = 'Recurring end date must be after or equal to recurring start date.';
+        }
+
+        if ($recurringStartDate->lt($offerStart)) {
+            $messages['recurring_start_date'] = 'Recurring start date must be within the offer start and end dates.';
+        }
+
+        if ($recurringEndDate->gt($offerEnd)) {
+            $messages['recurring_end_date'] = 'Recurring end date must be within the offer start and end dates.';
+        }
+
+        $invalidRecurringDays = array_diff($recurringDays, $this->allowedRecurringDays());
+        if ($invalidRecurringDays !== []) {
+            $messages['recurring_days'] = 'Recurring days must be valid weekday names.';
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+
+        $data['is_recurring'] = true;
+        $data['recurring_start_date'] = $recurringStartDate->format('Y-m-d');
+        $data['recurring_end_date'] = $recurringEndDate->format('Y-m-d');
+        $data['recurring_days'] = $recurringDays;
+    }
+
+    private function allowedRecurringDays(): array
+    {
+        return [
+            'sunday',
+            'monday',
+            'tuesday',
+            'wednesday',
+            'thursday',
+            'friday',
+            'saturday',
+        ];
+    }
+
+    private function normalizeRecurringDays(array $days): array
+    {
+        $normalized = [];
+
+        foreach ($days as $day) {
+            $value = strtolower(trim((string) $day));
+            if ($value === '' || isset($normalized[$value])) {
+                continue;
+            }
+
+            $normalized[$value] = true;
+        }
+
+        return array_keys($normalized);
     }
 
     private function extractDateAndTime(string $value): array
@@ -2010,6 +2839,29 @@ class AdminController extends Controller
     private function isBlankValue($value): bool
     {
         return $this->normalizeNullableString($value) === null;
+    }
+
+    private function isSuperAdmin(Request $request): bool
+    {
+        return strtolower((string) ($request->user()?->role ?? '')) === 'superadmin';
+    }
+
+    private function promoteUserToAdmin(User $user): true|string
+    {
+        if (!in_array($user->role, ['user', 'organization', 'admin'], true)) {
+            return 'Only user or organization accounts can be assigned as admin.';
+        }
+
+        $updates = ['role' => 'admin'];
+        if (Schema::hasColumn('users', 'status')) {
+            $updates['status'] = 'active';
+        }
+
+        $user->update($updates);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'sanctum']);
+        $user->syncRoles(['admin']);
+
+        return true;
     }
 
     private function formatOrganization(User $user): array

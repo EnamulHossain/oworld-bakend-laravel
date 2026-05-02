@@ -9,10 +9,18 @@
             'siteTitle' => 'oWorld',
             'tagline' => 'Local experiences, curated offers, and cultural insights.',
             'logo' => null,
+            'favicon' => null,
             'contactEmail' => 'hello@oworld.test',
         ];
     @endphp
     <title>{{ $site['siteTitle'] }}</title>
+    @if (!empty($site['favicon']))
+        <link rel="icon" href="{{ $site['favicon'] }}">
+        <link rel="shortcut icon" href="{{ $site['favicon'] }}">
+    @else
+        <link rel="icon" href="{{ asset('oworld-small.png') }}">
+        <link rel="shortcut icon" href="{{ asset('oworld-small.png') }}">
+    @endif
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastr@2.1.4/build/toastr.min.css">

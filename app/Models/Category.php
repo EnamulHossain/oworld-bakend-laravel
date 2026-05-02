@@ -12,6 +12,8 @@ class Category extends BaseModel
         'name',
         'short_name',
         'image',
+        'banner',
+        'gallery_sort_order',
         'icon',
         'order',
         'status',
@@ -21,6 +23,8 @@ class Category extends BaseModel
 
     protected $casts = [
         'order' => 'integer',
+        'banner' => 'array',
+        'gallery_sort_order' => 'array',
     ];
 
     public function creator()

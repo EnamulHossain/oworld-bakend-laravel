@@ -30,10 +30,14 @@ trait FormatsUser
             'about' => $user->about,
             'email' => $user->email,
             'role' => $user->role,
+            'status' => $user->status ?? 'active',
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
             'phone' => $user->phone,
             'avatar' => $this->formatAvatar($user->avatar),
+            'referralCode' => $user->referral_code,
+            'referredByUserId' => $user->referred_by_user_id,
+            'referralCount' => (int) ($user->referralsMade()->where('status', 'completed')->count()),
             'created_at' => $user->created_at,
         ];
     }
