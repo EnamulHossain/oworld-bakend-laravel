@@ -1518,6 +1518,7 @@ class AdminController extends Controller
 
         $data['coupon_name'] = $coupon->name;
         $data['coupon_no'] = (int) ($coupon->total_coupon ?? 1);
+        $data['status'] = $coupon->status ?: 'draft';
         $data['offer_id'] = $firstDetail?->offer_id;
         $data['event_id'] = $firstDetail?->event_id;
         $data['claimed_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => !empty($detail->claimed_by_user_id) || !empty($detail->claimed_at))->count();

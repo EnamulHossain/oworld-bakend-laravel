@@ -536,7 +536,7 @@ class PublicController extends Controller
                     'id' => $event->category->id,
                     'name' => $event->category->name,
                 ] : null,
-                'coupons' => $user ? $this->getActiveCouponsForTarget('event', (int) $event->id) : [],
+                'coupons' => $this->getActiveCouponsForTarget('event', (int) $event->id, $user?->id),
             ],
         ]);
     }
@@ -1028,7 +1028,7 @@ class PublicController extends Controller
                     'id' => $offer->area->id,
                     'name' => $offer->area->name,
                 ] : null,
-                'coupons' => $user ? $this->getActiveCouponsForTarget('offer', (int) $offer->id) : [],
+                'coupons' => $this->getActiveCouponsForTarget('offer', (int) $offer->id, $user?->id),
             ],
         ]);
     }
@@ -1382,7 +1382,7 @@ class PublicController extends Controller
         return now()->gt($endAt);
     }
 
-    private function getActiveCouponsForTarget(string $targetType, int $targetId): array
+    private function getActiveCouponsForTarget(string $targetType, int $targetId, ?int $userId = null): array
     {
         if (!in_array($targetType, ['offer', 'event'], true) || $targetId < 1) {
             return [];
@@ -1394,6 +1394,7 @@ class PublicController extends Controller
             ->with([
                 'organization:id,organization_name,username',
                 'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
+                'details:id,coupon_id,offer_id,event_id,coupon,claimed_by_user_id',
             ])
             ->where('status', 'active')
             ->whereHas('details', function ($query) use ($relationColumn, $targetId) {
@@ -1404,8 +1405,15 @@ class PublicController extends Controller
             ->filter(function (Coupon $coupon) {
                 return !$this->couponStartsInFuture($coupon) && !$this->couponIsExpired($coupon);
             })
-            ->map(function (Coupon $coupon) use ($targetType, $targetId) {
+            ->map(function (Coupon $coupon) use ($targetType, $targetId, $userId) {
                 $firstTier = $coupon->tiers->sortBy('sort_order')->first();
+                $currentUserClaim = $userId
+                    ? $coupon->details
+                        ->where('claimed_by_user_id', $userId)
+                        ->where($targetType === 'offer' ? 'offer_id' : 'event_id', $targetId)
+                        ->sortBy('id')
+                        ->first()
+                    : null;
 
                 return [
                     'id' => $coupon->id,
@@ -1428,6 +1436,8 @@ class PublicController extends Controller
                     'max_discount_amount' => $firstTier?->max_discount_amount !== null ? (float) $firstTier->max_discount_amount : null,
                     'min_order_amount' => $firstTier?->min_order_amount !== null ? (float) $firstTier->min_order_amount : null,
                     'referral_required_count' => (int) ($firstTier?->referral_required_count ?? 0),
+                    'current_user_claimed' => (bool) $currentUserClaim,
+                    'claimed_code' => $currentUserClaim?->coupon,
                     'tiers' => $coupon->tiers
                         ->sortBy('sort_order')
                         ->values()
