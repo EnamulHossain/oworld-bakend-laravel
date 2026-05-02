@@ -33,6 +33,11 @@ class AdminController extends Controller
     public function users(Request $request)
     {
         $columns = ['id', 'username', 'email', 'role', 'organization_name', 'created_at'];
+        foreach (['full_name', 'phone', 'dob', 'gender', 'signup_source', 'google_id'] as $column) {
+            if (Schema::hasColumn('users', $column)) {
+                $columns[] = $column;
+            }
+        }
         if (Schema::hasColumn('users', 'status')) {
             $columns[] = 'status';
         }
@@ -311,6 +316,7 @@ class AdminController extends Controller
                 'organizationCount' => User::where('role', 'organization')->count(),
                 'userCount' => User::where('role', 'user')->count(),
                 'ageRatio' => $this->ageRatioStats(),
+                'genderRatio' => $this->genderRatioStats(),
                 'thisWeekUsers' => User::whereBetween('created_at', [
                     now()->startOfWeek(),
                     now()->endOfWeek(),
@@ -353,6 +359,40 @@ class AdminController extends Controller
                     default => 'Direct / Unknown',
                 },
                 'count' => $count,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function genderRatioStats(): array
+    {
+        $buckets = [
+            'male' => ['label' => 'Male', 'group' => 'Specified', 'count' => 0],
+            'female' => ['label' => 'Female', 'group' => 'Specified', 'count' => 0],
+            'other' => ['label' => 'Other', 'group' => 'Specified', 'count' => 0],
+            'prefer_not_to_say' => ['label' => 'Prefer not to say', 'group' => 'Unspecified', 'count' => 0],
+            'unknown' => ['label' => 'Unknown', 'group' => 'Unspecified', 'count' => 0],
+        ];
+
+        User::query()
+            ->select('gender')
+            ->get()
+            ->each(function (User $user) use (&$buckets) {
+                $gender = $user->gender ?: 'unknown';
+
+                if (!array_key_exists($gender, $buckets)) {
+                    $gender = 'unknown';
+                }
+
+                $buckets[$gender]['count']++;
+            });
+
+        return collect($buckets)
+            ->map(fn ($item, $gender) => [
+                'gender' => $gender,
+                'label' => $item['label'],
+                'group' => $item['group'],
+                'count' => $item['count'],
             ])
             ->values()
             ->all();
