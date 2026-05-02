@@ -1042,6 +1042,8 @@ class AdminController extends Controller
                 'creator:id,username,full_name',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
+            ->when($request->query('offer_type'), fn ($q, $offerType) => $q->where('offer_type', $offerType))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -1320,8 +1322,8 @@ class AdminController extends Controller
         $query = Coupon::query()
             ->with([
                 'organization:id,organization_name,username',
-                'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
-                'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
+                'details.claimedBy:id,username,full_name,email,phone',
+                'details:id,coupon_id,coupon_tier_id,coupon,offer_id,event_id,organization_id,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
@@ -1357,8 +1359,8 @@ class AdminController extends Controller
         $this->expireCouponsIfNeeded([$coupon->id]);
         $coupon->load([
             'organization:id,organization_name,username',
-            'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
-            'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
+            'details.claimedBy:id,username,full_name,email,phone',
+            'details:id,coupon_id,coupon_tier_id,coupon,offer_id,event_id,organization_id,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
         ]);
 
         $responseCoupons = collect([$coupon])
@@ -1374,14 +1376,23 @@ class AdminController extends Controller
 
     public function updateCoupon(Request $request, Coupon $coupon)
     {
+        $this->expireCouponsIfNeeded([$coupon->id]);
+        $coupon->refresh();
+
+        if (in_array($coupon->status, ['expired', 'archived'], true)) {
+            return response()->json([
+                'error' => 'Expired or archived coupons are read-only.',
+            ], 422);
+        }
+
         [$data, $tiers, $masterPayload, $organizationId] = $this->prepareCouponPayload($request, $coupon);
         $coupon = $this->saveCouponCampaign($coupon, $masterPayload, $tiers, $data, $request, $organizationId);
 
         $this->expireCouponsIfNeeded([$coupon->id]);
         $coupon->load([
             'organization:id,organization_name,username',
-            'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
-            'details:id,coupon_id,coupon_tier_id,offer_id,event_id,organization_id,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
+            'details.claimedBy:id,username,full_name,email,phone',
+            'details:id,coupon_id,coupon_tier_id,coupon,offer_id,event_id,organization_id,claimed_by_user_id,claimed_at,is_used,user_id,used_at',
         ]);
 
         return response()->json([
@@ -1392,6 +1403,15 @@ class AdminController extends Controller
 
     public function deleteCoupon(Coupon $coupon)
     {
+        $this->expireCouponsIfNeeded([$coupon->id]);
+        $coupon->refresh();
+
+        if (in_array($coupon->status, ['expired', 'archived'], true)) {
+            return response()->json([
+                'error' => 'Expired or archived coupons are read-only.',
+            ], 422);
+        }
+
         DB::transaction(function () use ($coupon) {
             $coupon->details()->delete();
             $coupon->tiers()->delete();
@@ -1420,55 +1440,57 @@ class AdminController extends Controller
     private function prepareCouponPayload(Request $request, ?Coupon $coupon = null): array
     {
         $data = $request->validate([
-            'coupon_name' => ['required', 'string', 'max:200'],
+            'coupon_name' => [
+                'required',
+                'string',
+                'max:30',
+                Rule::unique('coupons', 'name')->ignore($coupon?->id),
+            ],
             'image' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'campaign_type' => ['nullable', Rule::in(['standard', 'tiered', 'referral'])],
+            'campaign_type' => ['nullable', Rule::in(['standard'])],
             'offer_id' => ['nullable', 'exists:offers,id'],
             'event_id' => ['nullable', 'exists:events,id'],
-            'status' => ['nullable', Rule::in(['active', 'inactive', 'draft'])],
+            'status' => ['nullable', Rule::in(['draft', 'published', 'scheduled', 'inactive', 'expired', 'archived', 'canceled'])],
             'start_date' => ['nullable', 'date'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
+            'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+            'expiration_time' => ['nullable', 'date_format:H:i'],
             'coupon_no' => ['nullable', 'integer', 'min:1', 'max:1000'],
-            'usage_limit_per_user' => ['nullable', 'integer', 'min:1', 'max:1000'],
-            'discount_type' => ['nullable', Rule::in(['percentage', 'flat'])],
-            'discount_value' => ['nullable', 'numeric', 'min:0.01'],
-            'max_discount_amount' => ['nullable', 'numeric', 'min:0'],
-            'min_order_amount' => ['nullable', 'numeric', 'min:0'],
-            'referral_required_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
-            'tiers' => ['nullable', 'array', 'min:1', 'max:20'],
-            'tiers.*.label' => ['nullable', 'string', 'max:120'],
-            'tiers.*.quantity' => ['nullable', 'integer', 'min:1', 'max:1000'],
-            'tiers.*.discount_type' => ['nullable', Rule::in(['percentage', 'flat'])],
-            'tiers.*.discount_value' => ['nullable', 'numeric', 'min:0.01'],
-            'tiers.*.max_discount_amount' => ['nullable', 'numeric', 'min:0'],
-            'tiers.*.min_order_amount' => ['nullable', 'numeric', 'min:0'],
-            'tiers.*.referral_required_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
         $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+        if (array_key_exists('expiration_date', $data) && $data['expiration_date']) {
+            [$normalizedDate, $timeFromDate] = $this->extractDateAndTime((string) $data['expiration_date']);
+            $data['expiration_date'] = $normalizedDate;
+            if (empty($data['expiration_time']) && $timeFromDate !== null) {
+                $data['expiration_time'] = $timeFromDate;
+            }
+        }
+        if (array_key_exists('expiration_time', $data)) {
+            $data['expiration_time'] = $this->normalizeTimeValue($data['expiration_time']);
+        }
         $this->validateCouponTargetFields($data);
-        $tiers = $this->normalizeCouponTierPayload($data);
-        $this->validateCouponTierPayload($tiers, $data['campaign_type'] ?? null, $data['coupon_no'] ?? null);
-        $couponCount = (int) collect($tiers)->sum('quantity');
-        $campaignType = $this->resolveCouponCampaignType($tiers, $data['campaign_type'] ?? null);
+        $couponCount = max(1, (int) ($data['coupon_no'] ?? $coupon?->total_coupon ?? 1));
         $organizationId = $this->resolveCouponOrganizationId($data);
 
         $masterPayload = [
             'name' => trim((string) $data['coupon_name']),
             'image' => trim((string) ($data['image'] ?? '')) ?: null,
             'description' => trim((string) ($data['description'] ?? '')) ?: null,
-            'campaign_type' => $campaignType,
+            'campaign_type' => 'standard',
             'organization_id' => $organizationId,
             'status' => $data['status'] ?? ($coupon?->status ?? 'draft'),
             'start_date' => $data['start_date'] ?? null,
             'start_time' => $data['start_time'] ?? null,
             'end_date' => $data['end_date'] ?? null,
             'end_time' => $data['end_time'] ?? null,
+            'expiration_date' => $data['expiration_date'] ?? null,
+            'expiration_time' => $data['expiration_time'] ?? null,
             'total_coupon' => $couponCount,
-            'usage_limit_per_user' => $data['usage_limit_per_user'] ?? 1,
+            'usage_limit_per_user' => null,
             'updated_by' => $request->user()->id,
         ];
 
@@ -1476,7 +1498,7 @@ class AdminController extends Controller
             $masterPayload['created_by'] = $request->user()->id;
         }
 
-        return [$data, $tiers, $masterPayload, $organizationId];
+        return [$data, [['quantity' => $couponCount]], $masterPayload, $organizationId];
     }
 
     private function saveCouponCampaign(?Coupon $coupon, array $masterPayload, array $tiers, array $data, Request $request, ?int $organizationId): Coupon
@@ -1508,42 +1530,28 @@ class AdminController extends Controller
                 $master = Coupon::create($masterPayload);
             }
 
-            foreach ($tiers as $index => $tierData) {
-                $tier = CouponTier::create([
+            $codeCount = max(1, (int) ($tiers[0]['quantity'] ?? $master->total_coupon ?? 1));
+
+            for ($codeIndex = 0; $codeIndex < $codeCount; $codeIndex++) {
+                CouponDetail::create([
                     'coupon_id' => $master->id,
-                    'label' => $tierData['label'] ?: sprintf('Tier %d', $index + 1),
-                    'quantity' => $tierData['quantity'],
-                    'discount_type' => $tierData['discount_type'],
-                    'discount_value' => $tierData['discount_value'],
-                    'max_discount_amount' => $tierData['max_discount_amount'],
-                    'min_order_amount' => $tierData['min_order_amount'],
-                    'referral_required_count' => $tierData['referral_required_count'],
-                    'sort_order' => $index,
+                    'coupon_tier_id' => null,
+                    'coupon' => $this->generateUniqueCouponCode(),
+                    'offer_id' => $data['offer_id'] ?? null,
+                    'event_id' => $data['event_id'] ?? null,
+                    'organization_id' => $organizationId,
+                    'discount_type' => null,
+                    'discount_value' => null,
+                    'max_discount_amount' => null,
+                    'min_order_amount' => null,
+                    'referral_required_count' => 0,
+                    'claimed_by_user_id' => null,
+                    'claimed_at' => null,
                     'created_by' => $master->created_by ?: $request->user()->id,
                     'updated_by' => $request->user()->id,
+                    'is_used' => false,
+                    'used_at' => null,
                 ]);
-
-                for ($codeIndex = 0; $codeIndex < $tierData['quantity']; $codeIndex++) {
-                    CouponDetail::create([
-                        'coupon_id' => $master->id,
-                        'coupon_tier_id' => $tier->id,
-                        'coupon' => $this->generateUniqueCouponCode(),
-                        'offer_id' => $data['offer_id'] ?? null,
-                        'event_id' => $data['event_id'] ?? null,
-                        'organization_id' => $organizationId,
-                        'discount_type' => $tierData['discount_type'],
-                        'discount_value' => $tierData['discount_value'],
-                        'max_discount_amount' => $tierData['max_discount_amount'],
-                        'min_order_amount' => $tierData['min_order_amount'],
-                        'referral_required_count' => $tierData['referral_required_count'],
-                        'claimed_by_user_id' => null,
-                        'claimed_at' => null,
-                        'created_by' => $master->created_by ?: $request->user()->id,
-                        'updated_by' => $request->user()->id,
-                        'is_used' => false,
-                        'used_at' => null,
-                    ]);
-                }
             }
 
             return $master;
@@ -1561,6 +1569,24 @@ class AdminController extends Controller
         $data['status'] = $coupon->status ?: 'draft';
         $data['offer_id'] = $firstDetail?->offer_id;
         $data['event_id'] = $firstDetail?->event_id;
+        $data['details'] = $coupon->details
+            ->map(function (CouponDetail $detail) {
+                $claimedBy = $detail->claimedBy;
+
+                return [
+                    'id' => $detail->id,
+                    'coupon' => $detail->coupon,
+                    'claimed_by_user_id' => $detail->claimed_by_user_id,
+                    'claimed_by_name' => $claimedBy?->full_name ?: $claimedBy?->username,
+                    'claimed_by_email' => $claimedBy?->email,
+                    'claimed_by_phone' => $claimedBy?->phone,
+                    'claimed_at' => optional($detail->claimed_at)?->toISOString(),
+                    'is_used' => (bool) $detail->is_used,
+                    'used_at' => optional($detail->used_at)?->toISOString(),
+                ];
+            })
+            ->values()
+            ->all();
         $data['claimed_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => !empty($detail->claimed_by_user_id) || !empty($detail->claimed_at))->count();
         $data['used_count'] = (int) $coupon->details->filter(fn (CouponDetail $detail) => (bool) $detail->is_used)->count();
         $data['tiers'] = $coupon->tiers
@@ -1717,17 +1743,32 @@ class AdminController extends Controller
 
     private function expireCouponsIfNeeded(?array $couponIds = null): void
     {
-        $now = now()->toDateTimeString();
+        $now = $this->couponNow()->toDateTimeString();
 
         Coupon::query()
             ->when($couponIds, fn ($query) => $query->whereIn('id', $couponIds))
-            ->where('status', '!=', 'inactive')
-            ->whereNotNull('end_date')
-            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+            ->whereNotIn('status', ['archived', 'canceled'])
+            ->whereNotNull('expiration_date')
+            ->whereRaw("timestamp(expiration_date, coalesce(expiration_time, '23:59:59')) < ?", [$now])
             ->update([
                 'status' => 'inactive',
                 'updated_at' => now(),
             ]);
+
+        Coupon::query()
+            ->when($couponIds, fn ($query) => $query->whereIn('id', $couponIds))
+            ->whereNotIn('status', ['expired', 'inactive', 'archived', 'canceled'])
+            ->whereNotNull('end_date')
+            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+            ->update([
+                'status' => 'expired',
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function couponNow()
+    {
+        return now('Asia/Dhaka');
     }
 
     public function listHighlights()

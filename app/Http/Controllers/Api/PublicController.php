@@ -1238,7 +1238,7 @@ class PublicController extends Controller
             return ['valid' => false, 'message' => 'Coupon can be checked against one target at a time.'];
         }
 
-        if (($coupon->status ?? 'draft') !== 'active') {
+        if (!in_array($coupon->status ?? 'draft', ['published', 'active'], true)) {
             return ['valid' => false, 'message' => 'Coupon is not active.'];
         }
 
@@ -1364,7 +1364,7 @@ class PublicController extends Controller
             $coupon->start_time ?: '00:00:00'
         );
 
-        return now()->lt($startAt);
+        return $this->couponNow()->lt($startAt);
     }
 
     private function couponIsExpired(Coupon $coupon): bool
@@ -1379,7 +1379,7 @@ class PublicController extends Controller
             $coupon->end_time ?: '23:59:59'
         );
 
-        return now()->gt($endAt);
+        return $this->couponNow()->gt($endAt);
     }
 
     private function getActiveCouponsForTarget(string $targetType, int $targetId, ?int $userId = null): array
@@ -1396,7 +1396,7 @@ class PublicController extends Controller
                 'tiers:id,coupon_id,label,quantity,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count,sort_order',
                 'details:id,coupon_id,offer_id,event_id,coupon,claimed_by_user_id',
             ])
-            ->where('status', 'active')
+            ->whereIn('status', ['published', 'active'])
             ->whereHas('details', function ($query) use ($relationColumn, $targetId) {
                 $query->where($relationColumn, $targetId);
             })
@@ -1458,16 +1458,32 @@ class PublicController extends Controller
             ->all();
     }
 
-    private function expireCouponsIfNeeded(): void
+    private function expireCouponsIfNeeded(?array $couponIds = null): void
     {
         Coupon::query()
-            ->where('status', '!=', 'inactive')
-            ->whereNotNull('end_date')
-            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [now()->toDateTimeString()])
+            ->when($couponIds, fn ($query) => $query->whereIn('id', $couponIds))
+            ->whereNotIn('status', ['inactive', 'archived', 'canceled'])
+            ->whereNotNull('expiration_date')
+            ->whereRaw("timestamp(expiration_date, coalesce(expiration_time, '23:59:59')) < ?", [$this->couponNow()->toDateTimeString()])
             ->update([
                 'status' => 'inactive',
                 'updated_at' => now(),
             ]);
+
+        Coupon::query()
+            ->when($couponIds, fn ($query) => $query->whereIn('id', $couponIds))
+            ->whereNotIn('status', ['expired', 'inactive', 'archived', 'canceled'])
+            ->whereNotNull('end_date')
+            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$this->couponNow()->toDateTimeString()])
+            ->update([
+                'status' => 'expired',
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function couponNow()
+    {
+        return now('Asia/Dhaka');
     }
 
     public function attributes(Request $request)

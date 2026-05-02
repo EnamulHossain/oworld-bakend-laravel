@@ -19,6 +19,8 @@ class Coupon extends BaseModel
         'start_time',
         'end_date',
         'end_time',
+        'expiration_date',
+        'expiration_time',
         'total_coupon',
         'usage_limit_per_user',
         'created_by',
@@ -28,6 +30,7 @@ class Coupon extends BaseModel
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'expiration_date' => 'date',
         'total_coupon' => 'integer',
         'usage_limit_per_user' => 'integer',
     ];
