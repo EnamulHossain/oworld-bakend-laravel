@@ -15,6 +15,8 @@ class Offer extends BaseModel
         'start_time',
         'end_date',
         'end_time',
+        'expiration_date',
+        'expiration_time',
         'address',
         'phone_number',
         'facebook_url',
@@ -48,6 +50,7 @@ class Offer extends BaseModel
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'expiration_date' => 'date',
         'is_recurring' => 'boolean',
         'recurring_start_date' => 'date',
         'recurring_end_date' => 'date',

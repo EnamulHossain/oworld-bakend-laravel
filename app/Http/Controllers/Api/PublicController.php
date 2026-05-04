@@ -214,6 +214,8 @@ class PublicController extends Controller
 
     public function categoryDetail($id)
     {
+        $this->syncOfferAndEventLifecycle();
+
         $category = Category::query()
             ->where('status', 'active')
             ->whereKey($id)
@@ -253,7 +255,7 @@ class PublicController extends Controller
 
         $offers = Offer::query()
             ->with('organization:id,organization_name')
-            ->where('status', 'active')
+            ->where('status', 'published')
             ->where('category_id', $category->id)
             ->orderBy('sort_order')
             ->orderBy('start_date')
@@ -348,6 +350,8 @@ class PublicController extends Controller
 
     public function events(Request $request)
     {
+        $this->syncOfferAndEventLifecycle(Event::class);
+
         $limit = min((int)$request->query('limit', 20), 100);
         $offset = max((int)$request->query('offset', 0), 0);
         $categoryId = $request->query('category_id');
@@ -437,6 +441,8 @@ class PublicController extends Controller
 
     public function eventHighlights(Request $request)
     {
+        $this->syncOfferAndEventLifecycle(Event::class);
+
         $limit = min((int)$request->query('limit', 12), 50);
 
         $events = Event::query()
@@ -497,6 +503,8 @@ class PublicController extends Controller
 
     public function eventDetail($id)
     {
+        $this->syncOfferAndEventLifecycle(Event::class, [(int) $id]);
+
         $user = Auth::guard('sanctum')->user();
         $event = Event::query()
             ->with(['organization:id,organization_name', 'category:id,name'])
@@ -543,6 +551,8 @@ class PublicController extends Controller
 
     public function offers(Request $request)
     {
+        $this->syncOfferAndEventLifecycle(Offer::class);
+
         $limit = min((int)$request->query('limit', 20), 100);
         $offset = max((int)$request->query('offset', 0), 0);
 
@@ -555,7 +565,7 @@ class PublicController extends Controller
                 'category:id,name',
                 'area:id,name',
             ])
-            ->where('status', 'active')
+            ->where('status', 'published')
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
             ->when($offerType === 'exclusive', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) = 'exclusive'"))
             ->when($offerType === 'regular', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) <> 'exclusive'"))
@@ -694,11 +704,13 @@ class PublicController extends Controller
 
     public function offerHighlights(Request $request)
     {
+        $this->syncOfferAndEventLifecycle(Offer::class);
+
         $limit = min((int)$request->query('limit', 12), 50);
 
         $offers = Offer::query()
             ->with('organization:id,organization_name')
-            ->where('status', 'active')
+            ->where('status', 'published')
             ->orderBy('sort_order')
             ->orderBy('start_date')
             ->orderByDesc('created_at')
@@ -978,10 +990,12 @@ class PublicController extends Controller
 
     public function offerDetail($id)
     {
+        $this->syncOfferAndEventLifecycle(Offer::class, [(int) $id]);
+
         $user = Auth::guard('sanctum')->user();
         $offer = Offer::query()
             ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
-            ->where('status', 'active')
+            ->where('status', 'published')
             ->find($id);
 
         if (!$offer) {
@@ -1035,6 +1049,8 @@ class PublicController extends Controller
 
     public function search(Request $request)
     {
+        $this->syncOfferAndEventLifecycle();
+
         $q = trim((string)$request->query('q', ''));
         if (strlen($q) < 2) {
             return response()->json(['success' => true, 'results' => []]);
@@ -1101,7 +1117,7 @@ class PublicController extends Controller
             ]);
 
         $offers = Offer::query()
-            ->where('status', 'active')
+            ->where('status', 'published')
             ->where(function ($builder) use ($q, $searchOffersByType) {
                 $builder->where('name', 'like', "%{$q}%")
                     ->orWhere('details', 'like', "%{$q}%")
@@ -1479,6 +1495,46 @@ class PublicController extends Controller
                 'status' => 'expired',
                 'updated_at' => now(),
             ]);
+    }
+
+    private function syncOfferAndEventLifecycle(?string $modelClass = null, ?array $ids = null): void
+    {
+        $classes = $modelClass ? [$modelClass] : [Offer::class, Event::class];
+        $now = now('Asia/Dhaka')->toDateTimeString();
+
+        foreach ($classes as $class) {
+            $startDate = $class === Event::class ? 'starting_date' : 'start_date';
+
+            $class::query()
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->where('status', 'scheduled')
+                ->whereNotNull($startDate)
+                ->whereRaw("timestamp($startDate, coalesce(start_time, '00:00:00')) <= ?", [$now])
+                ->update([
+                    'status' => 'published',
+                    'updated_at' => now(),
+                ]);
+
+            $class::query()
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->where('status', 'published')
+                ->whereNotNull('end_date')
+                ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+                ->update([
+                    'status' => 'expired',
+                    'updated_at' => now(),
+                ]);
+
+            $class::query()
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->where('status', 'expired')
+                ->whereNotNull('expiration_date')
+                ->whereRaw("timestamp(expiration_date, coalesce(expiration_time, '23:59:59')) < ?", [$now])
+                ->update([
+                    'status' => 'archived',
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     private function couponNow()

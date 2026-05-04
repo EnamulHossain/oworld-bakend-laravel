@@ -321,7 +321,7 @@ class AdminController extends Controller
                     now()->startOfWeek(),
                     now()->endOfWeek(),
                 ])->count(),
-                'activeOffers' => Offer::where('status', 'active')->count(),
+                'activeOffers' => Offer::where('status', 'published')->count(),
                 'publishedEvents' => Event::where('status', 'published')->count(),
                 'activeCategories' => Category::where('status', 'active')->count(),
                 'signupSources' => $this->signupSourceStats(),
@@ -852,6 +852,8 @@ class AdminController extends Controller
 
     public function listEvents(Request $request)
     {
+        $this->syncOfferAndEventLifecycle();
+
         $query = Event::query()
             ->with([
                 'organization:id,organization_name,username,phone',
@@ -860,6 +862,8 @@ class AdminController extends Controller
                 'creator:id,username,full_name',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            ->when($request->query('status_group') === 'published', fn ($q) => $q->whereIn('status', ['published', 'active']))
+            ->when($request->query('status_group') === 'other', fn ($q) => $q->whereNotIn('status', ['published', 'active']))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -868,9 +872,17 @@ class AdminController extends Controller
                         ->orWhere('location', 'like', "%{$term}%");
                 });
             })
-            ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
-            ->orderBy('sort_order')
-            ->orderByDesc('created_at');
+            ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id));
+
+        $eventSortColumns = ['sort_order', 'id', 'name', 'location', 'starting_date', 'end_date', 'expiration_date', 'status', 'created_at'];
+        $sortBy = $request->query('sort_by');
+        if (in_array($sortBy, $eventSortColumns, true)) {
+            $query->orderBy($sortBy, $request->query('sort_dir') === 'desc' ? 'desc' : 'asc')
+                ->orderByDesc('created_at');
+        } else {
+            $query->orderBy('sort_order')
+                ->orderByDesc('created_at');
+        }
 
         $events = $query->paginate((int)$request->query('limit', 15));
 
@@ -898,11 +910,13 @@ class AdminController extends Controller
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
+            'status' => ['nullable', Rule::in($this->offerEventStatuses())],
             'starting_date' => ['required', 'date'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['required', 'date', 'after_or_equal:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
+            'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+            'expiration_time' => ['nullable', 'date_format:H:i'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:50'],
@@ -925,6 +939,7 @@ class AdminController extends Controller
 
         $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
+        $data = $this->normalizeExpirationFields($data);
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
@@ -940,6 +955,8 @@ class AdminController extends Controller
         ]);
 
         $this->syncOrganizationEventContactDefaults($data);
+        $this->syncOfferAndEventLifecycle(Event::class, [$event->id]);
+        $event->refresh();
 
         return response()->json(['success' => true, 'event' => $event], 201);
     }
@@ -956,11 +973,13 @@ class AdminController extends Controller
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
+            'status' => ['nullable', Rule::in($this->offerEventStatuses())],
             'starting_date' => ['nullable', 'date'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['nullable', 'date', 'after_or_equal:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
+            'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+            'expiration_time' => ['nullable', 'date_format:H:i'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:50'],
@@ -983,6 +1002,7 @@ class AdminController extends Controller
 
         $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
+        $data = $this->normalizeExpirationFields($data, $event);
 
         if (array_key_exists('banner', $data)) {
             $data['banner'] = $this->toArrayField($data['banner']);
@@ -996,12 +1016,14 @@ class AdminController extends Controller
         }
 
         $event->update($data);
+        $this->syncOfferAndEventLifecycle(Event::class, [$event->id]);
+        $event->refresh();
         return response()->json(['success' => true, 'event' => $event]);
     }
 
     public function deleteEvent(Event $event)
     {
-        $event->delete();
+        $event->update(['status' => 'canceled']);
         return response()->json(['success' => true]);
     }
 
@@ -1034,6 +1056,8 @@ class AdminController extends Controller
 
     public function listOffers(Request $request)
     {
+        $this->syncOfferAndEventLifecycle();
+
         $query = Offer::query()
             ->with([
                 'organization:id,organization_name,username,phone',
@@ -1042,6 +1066,8 @@ class AdminController extends Controller
                 'creator:id,username,full_name',
             ])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            ->when($request->query('status_group') === 'published', fn ($q) => $q->whereIn('status', ['published', 'active']))
+            ->when($request->query('status_group') === 'other', fn ($q) => $q->whereNotIn('status', ['published', 'active']))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('offer_type'), fn ($q, $offerType) => $q->where('offer_type', $offerType))
             ->when($request->query('search'), function ($q, $term) {
@@ -1050,9 +1076,17 @@ class AdminController extends Controller
                         ->orWhere('details', 'like', "%{$term}%");
                 });
             })
-            ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id))
-            ->orderBy('sort_order')
-            ->orderByDesc('created_at');
+            ->when($request->query('organization_id'), fn ($q, $id) => $q->where('organization_id', $id));
+
+        $offerSortColumns = ['sort_order', 'id', 'name', 'start_date', 'end_date', 'expiration_date', 'status', 'created_at'];
+        $sortBy = $request->query('sort_by');
+        if (in_array($sortBy, $offerSortColumns, true)) {
+            $query->orderBy($sortBy, $request->query('sort_dir') === 'desc' ? 'desc' : 'asc')
+                ->orderByDesc('created_at');
+        } else {
+            $query->orderBy('sort_order')
+                ->orderByDesc('created_at');
+        }
 
         $offers = $query->paginate((int)$request->query('limit', 15));
 
@@ -1108,7 +1142,9 @@ class AdminController extends Controller
                 'area_id' => ['nullable', 'exists:areas,id'],
                 'area_ids' => ['nullable', 'array'],
                 'area_ids.*' => ['integer', 'exists:areas,id'],
-                'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+                'status' => ['nullable', Rule::in($this->offerEventStatuses())],
+                'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+                'expiration_time' => ['nullable', 'date_format:H:i'],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
                 'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
@@ -1125,6 +1161,7 @@ class AdminController extends Controller
 
             $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+            $data = $this->normalizeExpirationFields($data);
             $data = $this->normalizeOfferRecurringFields($data);
             $this->validateOfferRecurringFields($data);
 
@@ -1164,6 +1201,8 @@ class AdminController extends Controller
             });
 
             Log::info('API storeOffer success', ['offer_id' => $offer->id ?? null]);
+            $this->syncOfferAndEventLifecycle(Offer::class, [$offer->id]);
+            $offer->refresh();
 
             return response()->json(['success' => true, 'offer' => $offer], 201);
         } catch (\Throwable $e) {
@@ -1217,7 +1256,9 @@ class AdminController extends Controller
                 'area_id' => ['nullable', 'exists:areas,id'],
                 'area_ids' => ['nullable', 'array'],
                 'area_ids.*' => ['integer', 'exists:areas,id'],
-                'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+                'status' => ['nullable', Rule::in($this->offerEventStatuses())],
+                'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+                'expiration_time' => ['nullable', 'date_format:H:i'],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
                 'serial' => ['nullable', 'integer', 'min:0'],
                 'offer_type' => ['nullable', Rule::in(['regular', 'exclusive'])],
@@ -1234,6 +1275,7 @@ class AdminController extends Controller
 
             $data = $this->normalizeAreaSelection($data, 'offers');
             $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+            $data = $this->normalizeExpirationFields($data, $offer);
             $data = $this->normalizeOfferRecurringFields($data);
             $this->validateOfferRecurringFields($data, $offer);
 
@@ -1282,6 +1324,7 @@ class AdminController extends Controller
 
                 $offer->update($data + ['updated_by' => $request->user()->id]);
             });
+            $this->syncOfferAndEventLifecycle(Offer::class, [$offer->id]);
             Log::info('API updateOffer success', ['offer_id' => $offer->id]);
             return response()->json(['success' => true, 'offer' => $offer->fresh()]);
         } catch (\Throwable $e) {
@@ -1297,7 +1340,7 @@ class AdminController extends Controller
 
     public function deleteOffer(Offer $offer)
     {
-        $offer->delete();
+        $offer->update(['status' => 'canceled']);
         return response()->json(['success' => true]);
     }
 
@@ -1739,6 +1782,51 @@ class AdminController extends Controller
         }
 
         return count($tiers) > 1 ? 'tiered' : 'standard';
+    }
+
+    private function offerEventStatuses(): array
+    {
+        return ['draft', 'published', 'scheduled', 'expired', 'archived', 'canceled'];
+    }
+
+    private function syncOfferAndEventLifecycle(?string $modelClass = null, ?array $ids = null): void
+    {
+        $classes = $modelClass ? [$modelClass] : [Offer::class, Event::class];
+        $now = now('Asia/Dhaka')->toDateTimeString();
+
+        foreach ($classes as $class) {
+            $startDate = $class === Event::class ? 'starting_date' : 'start_date';
+
+            $class::query()
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->where('status', 'scheduled')
+                ->whereNotNull($startDate)
+                ->whereRaw("timestamp($startDate, coalesce(start_time, '00:00:00')) <= ?", [$now])
+                ->update([
+                    'status' => 'published',
+                    'updated_at' => now(),
+                ]);
+
+            $class::query()
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->where('status', 'published')
+                ->whereNotNull('end_date')
+                ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+                ->update([
+                    'status' => 'expired',
+                    'updated_at' => now(),
+                ]);
+
+            $class::query()
+                ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+                ->where('status', 'expired')
+                ->whereNotNull('expiration_date')
+                ->whereRaw("timestamp(expiration_date, coalesce(expiration_time, '23:59:59')) < ?", [$now])
+                ->update([
+                    'status' => 'archived',
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     private function expireCouponsIfNeeded(?array $couponIds = null): void
@@ -2637,6 +2725,35 @@ class AdminController extends Controller
         }
         if (array_key_exists($endTimeField, $data)) {
             $data[$endTimeField] = $this->normalizeTimeValue($data[$endTimeField]);
+        }
+
+        return $data;
+    }
+
+    private function normalizeExpirationFields(array $data, $model = null): array
+    {
+        if (array_key_exists('expiration_date', $data) && $data['expiration_date']) {
+            [$normalizedDate, $timeFromDate] = $this->extractDateAndTime((string) $data['expiration_date']);
+            $data['expiration_date'] = $normalizedDate;
+            if (empty($data['expiration_time']) && $timeFromDate !== null) {
+                $data['expiration_time'] = $timeFromDate;
+            }
+        }
+
+        if (array_key_exists('expiration_time', $data)) {
+            $data['expiration_time'] = $this->normalizeTimeValue($data['expiration_time']);
+        }
+
+        $expirationDate = $data['expiration_date'] ?? $model?->expiration_date?->format('Y-m-d');
+        if (!$expirationDate) {
+            return $data;
+        }
+
+        $endDate = $data['end_date'] ?? $model?->end_date?->format('Y-m-d');
+        if ($endDate && Carbon::parse($expirationDate)->startOfDay()->lt(Carbon::parse($endDate)->startOfDay())) {
+            throw ValidationException::withMessages([
+                'expiration_date' => 'Expiration date must be after or equal to end date.',
+            ]);
         }
 
         return $data;

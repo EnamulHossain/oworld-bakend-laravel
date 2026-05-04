@@ -20,6 +20,8 @@ class Event extends BaseModel
         'start_time',
         'end_date',
         'end_time',
+        'expiration_date',
+        'expiration_time',
         'location',
         'area_id',
         'area_ids',
@@ -38,6 +40,7 @@ class Event extends BaseModel
     protected $casts = [
         'starting_date' => 'date',
         'end_date' => 'date',
+        'expiration_date' => 'date',
         'banner' => 'array',
         'gallery_sort_order' => 'array',
         'attributes' => 'array',
