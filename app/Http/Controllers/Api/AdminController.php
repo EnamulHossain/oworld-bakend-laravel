@@ -854,6 +854,8 @@ class AdminController extends Controller
     {
         $this->syncOfferAndEventLifecycle();
 
+        $excludedStatuses = ['draft', 'scheduled', 'canceled', 'archived'];
+
         $query = Event::query()
             ->with([
                 'organization:id,organization_name,username,phone',
@@ -864,6 +866,7 @@ class AdminController extends Controller
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('status_group') === 'published', fn ($q) => $q->whereIn('status', ['published', 'active']))
             ->when($request->query('status_group') === 'other', fn ($q) => $q->whereNotIn('status', ['published', 'active']))
+            ->whereNotIn('status', $excludedStatuses)
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -1058,6 +1061,8 @@ class AdminController extends Controller
     {
         $this->syncOfferAndEventLifecycle();
 
+        $excludedStatuses = ['draft', 'scheduled', 'canceled', 'archived'];
+
         $query = Offer::query()
             ->with([
                 'organization:id,organization_name,username,phone',
@@ -1068,6 +1073,7 @@ class AdminController extends Controller
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('status_group') === 'published', fn ($q) => $q->whereIn('status', ['published', 'active']))
             ->when($request->query('status_group') === 'other', fn ($q) => $q->whereNotIn('status', ['published', 'active']))
+            ->whereNotIn('status', $excludedStatuses)
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('offer_type'), fn ($q, $offerType) => $q->where('offer_type', $offerType))
             ->when($request->query('search'), function ($q, $term) {
