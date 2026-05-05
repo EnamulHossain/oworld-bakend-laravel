@@ -361,7 +361,7 @@ class PublicController extends Controller
                 'organization:id,organization_name',
                 'category:id,name',
             ])
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'expired'])
             ->orderBy('sort_order')
             ->orderBy('starting_date')
             ->orderByDesc('created_at');
@@ -390,10 +390,12 @@ class PublicController extends Controller
             'google_map_url',
             'organization_id',
             'category_id',
+            'status',
             'sort_order',
         ])->map(function ($event) {
             return [
                 'id' => $event->id,
+                'status' => $event->status,
                 'title' => $event->name,
                 'description' => $event->description,
                 'date' => $event->starting_date,
@@ -565,7 +567,7 @@ class PublicController extends Controller
                 'category:id,name',
                 'area:id,name',
             ])
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'expired'])
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
             ->when($offerType === 'exclusive', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) = 'exclusive'"))
             ->when($offerType === 'regular', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) <> 'exclusive'"))
@@ -604,12 +606,14 @@ class PublicController extends Controller
                 'recurring_start_date',
                 'recurring_end_date',
                 'recurring_days',
+                'status',
                 'sort_order',
                 'offer_type',
             ])->map(function ($offer) {
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
                     'id' => $offer->id,
+                    'status' => $offer->status,
                     'title' => $offer->name,
                     'description' => $offer->details,
                     'date' => $offer->start_date,
