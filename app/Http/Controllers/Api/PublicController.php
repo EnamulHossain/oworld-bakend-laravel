@@ -670,6 +670,8 @@ class PublicController extends Controller
 
     public function contentBlocks()
     {
+        $this->syncOfferAndEventLifecycle();
+
         $blocks = ContentBlock::query()
             ->with(['items' => fn ($q) => $q->orderBy('sort_order')->orderBy('id')])
             ->where('is_active', true)
@@ -677,7 +679,26 @@ class PublicController extends Controller
             ->orderBy('id')
             ->get();
 
-        $formatted = $blocks->map(function (ContentBlock $block) {
+        $offerIds = $blocks
+            ->flatMap(fn (ContentBlock $block) => $block->items)
+            ->filter(fn ($item) => $item->type === 'offer' && $item->target_id)
+            ->pluck('target_id')
+            ->unique()
+            ->values();
+        $eventIds = $blocks
+            ->flatMap(fn (ContentBlock $block) => $block->items)
+            ->filter(fn ($item) => $item->type === 'event' && $item->target_id)
+            ->pluck('target_id')
+            ->unique()
+            ->values();
+        $offerStatuses = $offerIds->isNotEmpty()
+            ? Offer::whereIn('id', $offerIds)->pluck('status', 'id')
+            : collect();
+        $eventStatuses = $eventIds->isNotEmpty()
+            ? Event::whereIn('id', $eventIds)->pluck('status', 'id')
+            : collect();
+
+        $formatted = $blocks->map(function (ContentBlock $block) use ($offerStatuses, $eventStatuses) {
             return [
                 'id' => $block->id,
                 'name' => $block->name,
@@ -686,17 +707,29 @@ class PublicController extends Controller
                 'teared_block' => (bool) $block->teared_block,
                 'thumbnail_image' => $block->thumbnail_image,
                 'featured_sort_order' => $block->featured_sort_order,
-                'items' => $block->items->map(fn ($item) => [
-                    'id' => $item->id,
-                    'type' => $item->type,
-                    'targetId' => $item->target_id,
-                    'target_id' => $item->target_id,
-                    'title' => $item->title,
-                    'subtitle' => $item->subtitle,
-                    'image' => $item->image,
-                    'external_link' => $item->external_link,
-                    'sort_order' => $item->sort_order,
-                ])->values(),
+                'items' => $block->items->map(function ($item) use ($offerStatuses, $eventStatuses) {
+                    $targetStatus = null;
+                    if ($item->type === 'offer' && $item->target_id) {
+                        $targetStatus = $offerStatuses->get($item->target_id);
+                    }
+                    if ($item->type === 'event' && $item->target_id) {
+                        $targetStatus = $eventStatuses->get($item->target_id);
+                    }
+
+                    return [
+                        'id' => $item->id,
+                        'type' => $item->type,
+                        'targetId' => $item->target_id,
+                        'target_id' => $item->target_id,
+                        'target_status' => $targetStatus,
+                        'targetStatus' => $targetStatus,
+                        'title' => $item->title,
+                        'subtitle' => $item->subtitle,
+                        'image' => $item->image,
+                        'external_link' => $item->external_link,
+                        'sort_order' => $item->sort_order,
+                    ];
+                })->values(),
             ];
         });
 
