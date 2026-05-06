@@ -863,10 +863,10 @@ class AdminController extends Controller
                 'area:id,name',
                 'creator:id,username,full_name',
             ])
-            ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
-            ->when($request->query('status_group') === 'published', fn ($q) => $q->whereIn('status', ['published', 'active']))
-            ->when($request->query('status_group') === 'other', fn ($q) => $q->whereNotIn('status', ['published', 'active']))
-            ->whereNotIn('status', $excludedStatuses)
+            ->when($request->query('status'), fn ($q, $status) => $q->whereRaw('LOWER(TRIM(status)) = ?', [strtolower(trim($status))]))
+            ->when($request->query('status_group') === 'published', fn ($q) => $q->whereRaw("LOWER(TRIM(status)) IN ('published', 'active')"))
+            ->when($request->query('status_group') === 'other', fn ($q) => $q->whereRaw("LOWER(TRIM(status)) NOT IN ('published', 'active')"))
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('" . implode("','", $excludedStatuses) . "')")
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
