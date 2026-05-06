@@ -569,9 +569,9 @@ class PublicController extends Controller
             ])
             ->whereIn('status', ['published', 'expired'])
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
-            ->when($offerType === 'exclusive', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) = 'exclusive'"))
-            ->when($offerType === 'regular', fn ($q) => $q->whereRaw("LOWER(COALESCE(offer_type, '')) <> 'exclusive'"))
-            ->orderByRaw("CASE WHEN LOWER(COALESCE(offer_type, '')) = 'exclusive' THEN 0 ELSE 1 END")
+            ->when($offerType === 'exclusive', fn ($q) => $q->whereRaw("LOWER(TRIM(COALESCE(offer_type, ''))) = 'exclusive'"))
+            ->when($offerType === 'regular', fn ($q) => $q->whereRaw("LOWER(TRIM(COALESCE(offer_type, ''))) <> 'exclusive'"))
+            ->orderByRaw("CASE WHEN LOWER(TRIM(COALESCE(offer_type, ''))) = 'exclusive' THEN 0 ELSE 1 END")
             ->orderBy('sort_order')
             ->orderBy('start_date')
             ->orderByDesc('created_at');
