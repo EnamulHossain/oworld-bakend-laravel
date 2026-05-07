@@ -898,6 +898,33 @@ class AdminController extends Controller
                 'current_page' => $events->currentPage(),
                 'last_page' => $events->lastPage(),
             ],
+            'ordering' => [
+                'max_sort_order' => (int) Event::max('sort_order'),
+                'next_sort_order' => (int) Event::max('sort_order') + 1,
+            ],
+        ]);
+    }
+
+    public function reorderEvents(Request $request)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['required', 'integer', 'exists:events,id'],
+            'items.*.sort_order' => ['required', 'integer', 'min:0'],
+        ]);
+
+        DB::transaction(function () use ($data) {
+            foreach ($data['items'] as $item) {
+                Event::whereKey($item['id'])->update(['sort_order' => (int) $item['sort_order']]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'ordering' => [
+                'max_sort_order' => (int) Event::max('sort_order'),
+                'next_sort_order' => (int) Event::max('sort_order') + 1,
+            ],
         ]);
     }
 
@@ -949,13 +976,24 @@ class AdminController extends Controller
             $gallerySortOrder = [];
         }
 
-        $event = Event::create([
-            ...$data,
-            'banner' => $this->toArrayField($data['banner'] ?? []),
-            'gallery_sort_order' => $gallerySortOrder,
-            'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-            'created_by' => $request->user()->id,
-        ]);
+        $event = DB::transaction(function () use ($data, $request, $gallerySortOrder) {
+            $requestedOrder = $data['sort_order'] ?? null;
+            $nextOrder = (int) Event::max('sort_order') + 1;
+            $finalOrder = $requestedOrder === null ? $nextOrder : max(0, (int) $requestedOrder);
+
+            if ($requestedOrder !== null) {
+                Event::where('sort_order', '>=', $finalOrder)->increment('sort_order');
+            }
+
+            return Event::create([
+                ...$data,
+                'sort_order' => $finalOrder,
+                'banner' => $this->toArrayField($data['banner'] ?? []),
+                'gallery_sort_order' => $gallerySortOrder,
+                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
+                'created_by' => $request->user()->id,
+            ]);
+        });
 
         $this->syncOrganizationEventContactDefaults($data);
         $this->syncOfferAndEventLifecycle(Event::class, [$event->id]);
@@ -1018,7 +1056,28 @@ class AdminController extends Controller
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
 
-        $event->update($data);
+        DB::transaction(function () use ($data, $event) {
+            if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
+                $newOrder = max(0, (int) $data['sort_order']);
+                $currentOrder = (int) $event->sort_order;
+
+                if ($newOrder !== $currentOrder) {
+                    if ($newOrder < $currentOrder) {
+                        Event::where('id', '!=', $event->id)
+                            ->whereBetween('sort_order', [$newOrder, $currentOrder - 1])
+                            ->increment('sort_order');
+                    } else {
+                        Event::where('id', '!=', $event->id)
+                            ->whereBetween('sort_order', [$currentOrder + 1, $newOrder])
+                            ->decrement('sort_order');
+                    }
+                }
+
+                $data['sort_order'] = $newOrder;
+            }
+
+            $event->update($data);
+        });
         $this->syncOfferAndEventLifecycle(Event::class, [$event->id]);
         $event->refresh();
         return response()->json(['success' => true, 'event' => $event]);
@@ -1104,6 +1163,33 @@ class AdminController extends Controller
                 'per_page' => $offers->perPage(),
                 'current_page' => $offers->currentPage(),
                 'last_page' => $offers->lastPage(),
+            ],
+            'ordering' => [
+                'max_sort_order' => (int) Offer::max('sort_order'),
+                'next_sort_order' => (int) Offer::max('sort_order') + 1,
+            ],
+        ]);
+    }
+
+    public function reorderOffers(Request $request)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['required', 'integer', 'exists:offers,id'],
+            'items.*.sort_order' => ['required', 'integer', 'min:0'],
+        ]);
+
+        DB::transaction(function () use ($data) {
+            foreach ($data['items'] as $item) {
+                Offer::whereKey($item['id'])->update(['sort_order' => (int) $item['sort_order']]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'ordering' => [
+                'max_sort_order' => (int) Offer::max('sort_order'),
+                'next_sort_order' => (int) Offer::max('sort_order') + 1,
             ],
         ]);
     }

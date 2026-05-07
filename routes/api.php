@@ -79,6 +79,7 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
 
     Route::get('events', [AdminController::class, 'listEvents']);
     Route::post('events', [AdminController::class, 'storeEvent']);
+    Route::put('events/reorder', [AdminController::class, 'reorderEvents']);
     Route::put('events/{event}', [AdminController::class, 'updateEvent']);
     Route::delete('events/{event}', [AdminController::class, 'deleteEvent']);
     Route::post('events/upload-banner', [AdminController::class, 'uploadEventBanner']);
@@ -86,6 +87,7 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
 
     Route::get('offers', [AdminController::class, 'listOffers']);
     Route::post('offers', [AdminController::class, 'storeOffer']);
+    Route::put('offers/reorder', [AdminController::class, 'reorderOffers']);
     Route::put('offers/{offer}', [AdminController::class, 'updateOffer']);
     Route::delete('offers/{offer}', [AdminController::class, 'deleteOffer']);
     Route::post('offers/upload-media', [AdminController::class, 'uploadOfferMedia']);
