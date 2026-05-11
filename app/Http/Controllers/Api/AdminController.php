@@ -927,7 +927,7 @@ class AdminController extends Controller
             $query->orderBy($sortBy, $request->query('sort_dir') === 'desc' ? 'desc' : 'asc')
                 ->orderByDesc('created_at');
         } else {
-            $query->orderBy('sort_order')
+            $query->orderByDesc('sort_order')
                 ->orderByDesc('created_at');
         }
 
@@ -1193,7 +1193,7 @@ class AdminController extends Controller
             $query->orderBy($sortBy, $request->query('sort_dir') === 'desc' ? 'desc' : 'asc')
                 ->orderByDesc('created_at');
         } else {
-            $query->orderBy('sort_order')
+            $query->orderByDesc('sort_order')
                 ->orderByDesc('created_at');
         }
 
