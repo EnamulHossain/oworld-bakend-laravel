@@ -17,7 +17,7 @@ class AdminWebController extends Controller
     {
         return view('admin.dashboard', [
             'stats' => [
-                'totalUsers' => User::count(),
+                'totalUsers' => User::where('role', 'user')->count(),
                 'adminCount' => User::where('role', 'admin')->count(),
                 'organizationCount' => User::where('role', 'organization')->count(),
                 'userCount' => User::where('role', 'user')->count(),

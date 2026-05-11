@@ -308,47 +308,57 @@ class AdminController extends Controller
 
     public function stats()
     {
+        $signedUpUserAcquisition = $this->signupSourceStats();
+
         return response()->json([
             'success' => true,
             'stats' => [
-                'totalUsers' => User::count(),
+                'totalUsers' => User::where('role', 'user')->count(),
                 'adminCount' => User::where('role', 'admin')->count(),
                 'organizationCount' => User::where('role', 'organization')->count(),
                 'userCount' => User::where('role', 'user')->count(),
                 'ageRatio' => $this->ageRatioStats(),
                 'genderRatio' => $this->genderRatioStats(),
-                'thisWeekUsers' => User::whereBetween('created_at', [
-                    now()->startOfWeek(),
-                    now()->endOfWeek(),
-                ])->count(),
+                'thisWeekUsers' => User::where('role', 'user')
+                    ->whereBetween('created_at', [
+                        now()->startOfWeek(),
+                        now()->endOfWeek(),
+                    ])
+                    ->count(),
                 'activeOffers' => Offer::where('status', 'published')->count(),
                 'publishedEvents' => Event::where('status', 'published')->count(),
                 'activeCategories' => Category::where('status', 'active')->count(),
-                'signupSources' => $this->signupSourceStats(),
+                'userAcquisition' => $this->userAcquisitionStats(),
+                'signedUpUserAcquisition' => $signedUpUserAcquisition,
+                'signupSources' => $signedUpUserAcquisition,
             ],
         ]);
     }
 
-    private function signupSourceStats(): array
+    private function acquisitionBuckets(): array
     {
-        $sources = [
+        return [
             'facebook' => 0,
             'instagram' => 0,
             'google' => 0,
-            'direct' => 0,
+            'other' => 0,
         ];
+    }
 
-        User::query()
-            ->select('signup_source', 'google_id')
-            ->get()
-            ->each(function (User $user) use (&$sources) {
-                $source = $user->signup_source ?: ($user->google_id ? 'google' : 'direct');
-                if (!array_key_exists($source, $sources)) {
-                    $source = 'direct';
-                }
-                $sources[$source]++;
-            });
+    private function normalizeAcquisitionSource(?string $source): string
+    {
+        $source = Str::lower(trim((string) $source));
 
+        return match (true) {
+            in_array($source, ['facebook', 'fb'], true) || str_contains($source, 'facebook') => 'facebook',
+            in_array($source, ['instagram', 'ig'], true) || str_contains($source, 'instagram') => 'instagram',
+            $source === 'google' || str_contains($source, 'google') => 'google',
+            default => 'other',
+        };
+    }
+
+    private function formatAcquisitionBuckets(array $sources): array
+    {
         return collect($sources)
             ->map(fn ($count, $source) => [
                 'source' => $source,
@@ -356,12 +366,44 @@ class AdminController extends Controller
                     'facebook' => 'Facebook',
                     'instagram' => 'Instagram',
                     'google' => 'Google',
-                    default => 'Direct / Unknown',
+                    default => 'Other',
                 },
                 'count' => $count,
             ])
             ->values()
             ->all();
+    }
+
+    private function userAcquisitionStats(): array
+    {
+        $sources = $this->acquisitionBuckets();
+
+        AnalyticsEvent::query()
+            ->where('event_name', 'site_landing')
+            ->get(['channel', 'metadata'])
+            ->each(function (AnalyticsEvent $event) use (&$sources) {
+                $source = $this->normalizeAcquisitionSource(
+                    $event->channel ?: ($event->metadata['source'] ?? null)
+                );
+                $sources[$source]++;
+            });
+
+        return $this->formatAcquisitionBuckets($sources);
+    }
+
+    private function signupSourceStats(): array
+    {
+        $sources = $this->acquisitionBuckets();
+
+        User::query()
+            ->select('signup_source')
+            ->get()
+            ->each(function (User $user) use (&$sources) {
+                $source = $this->normalizeAcquisitionSource($user->signup_source);
+                $sources[$source]++;
+            });
+
+        return $this->formatAcquisitionBuckets($sources);
     }
 
     private function genderRatioStats(): array
@@ -854,7 +896,9 @@ class AdminController extends Controller
     {
         $this->syncOfferAndEventLifecycle();
 
-        $excludedStatuses = ['draft', 'scheduled', 'canceled', 'archived'];
+        $excludedStatuses = $request->boolean('coupon_targets')
+            ? ['canceled', 'archived']
+            : ['draft', 'scheduled', 'canceled', 'archived'];
 
         $query = Event::query()
             ->with([
@@ -1671,7 +1715,7 @@ class AdminController extends Controller
                 CouponDetail::create([
                     'coupon_id' => $master->id,
                     'coupon_tier_id' => null,
-                    'coupon' => $this->generateUniqueCouponCode(),
+                    'coupon' => $this->generateUniqueCouponCode($master->name),
                     'offer_id' => $data['offer_id'] ?? null,
                     'event_id' => $data['event_id'] ?? null,
                     'organization_id' => $organizationId,
@@ -2439,7 +2483,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'items' => ['nullable', 'array'],
-            'items.*.type' => ['required', Rule::in(['category', 'event', 'offer'])],
+            'items.*.type' => ['required', Rule::in(['custom', 'category', 'event', 'offer', 'store'])],
             'items.*.target_id' => ['nullable', 'integer'],
             'items.*.title' => ['nullable', 'string', 'max:200'],
             'items.*.subtitle' => ['nullable', 'string', 'max:255'],
@@ -2652,15 +2696,42 @@ class AdminController extends Controller
         return response()->json(['success' => true]);
     }
 
-    private function generateUniqueCouponCode(): string
+    private function generateUniqueCouponCode(?string $couponName = null): string
     {
+        $source = Str::lower(preg_replace('/[^a-zA-Z0-9]+/', '', (string) $couponName));
+        $fallback = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        $sourceCharacters = array_values(array_unique(str_split($source)));
+        $pool = count($sourceCharacters) >= 6
+            ? $sourceCharacters
+            : array_values(array_unique(array_merge($sourceCharacters, str_split($fallback))));
+        $sourceHasLetter = preg_match('/[a-z]/', $source) === 1;
+        $sourceHasNumber = preg_match('/\d/', $source) === 1;
+
         do {
-            $prefix = Str::random(5);
-            $timestamp = now()->format('YmdHisv');
-            $code = $prefix . $timestamp;
+            $code = '';
+            for ($index = 0; $index < 6; $index++) {
+                $code .= $pool[random_int(0, count($pool) - 1)];
+            }
+
+            if ($sourceHasLetter && !preg_match('/[a-z]/', $code)) {
+                $code[random_int(0, 5)] = $this->randomCharacterFromPattern($pool, '/[a-z]/');
+            }
+            if ($sourceHasNumber && !preg_match('/\d/', $code)) {
+                $code[random_int(0, 5)] = $this->randomCharacterFromPattern($pool, '/\d/');
+            }
         } while (CouponDetail::where('coupon', $code)->exists());
 
         return $code;
+    }
+
+    private function randomCharacterFromPattern(array $pool, string $pattern): string
+    {
+        $matches = array_values(array_filter($pool, fn ($character) => preg_match($pattern, $character) === 1));
+        if (empty($matches)) {
+            return $pool[random_int(0, count($pool) - 1)];
+        }
+
+        return $matches[random_int(0, count($matches) - 1)];
     }
 
     private function resolveOfferThumbnail($thumbnail, array $images): ?string

@@ -73,6 +73,9 @@ class AuthController extends Controller
                 'gender' => $data['gender'] ?? null,
                 'dob' => $data['dob'] ?? null,
                 'about' => $data['about'] ?? null,
+                'signup_source' => $this->sanitizeSignupSource($data['signup_source'] ?? null),
+                'signup_referrer' => $data['signup_referrer'] ?? null,
+                'signup_utm_campaign' => $data['signup_utm_campaign'] ?? null,
                 'referral_code' => $this->generateUniqueReferralCode($data['username']),
                 'referred_by_user_id' => $referrer?->id,
             ]);
@@ -220,6 +223,11 @@ class AuthController extends Controller
         $frontendRedirect = $state['redirect'] ?? $this->defaultFrontendRedirect();
         $role = $state['role'] ?? 'user';
         $referralCode = trim((string) ($state['referral_code'] ?? '')) ?: null;
+        $signupAttribution = [
+            'signup_source' => $this->sanitizeSignupSource($state['signup_source'] ?? null),
+            'signup_referrer' => $state['signup_referrer'] ?? null,
+            'signup_utm_campaign' => $state['signup_utm_campaign'] ?? null,
+        ];
 
         if ($request->filled('error')) {
             $googleError = (string) $request->query('error', '');
@@ -257,7 +265,7 @@ class AuthController extends Controller
             ->first();
 
         if (!$user) {
-            $user = $this->createUserFromGoogle($googleUser, $role, $referralCode);
+            $user = $this->createUserFromGoogle($googleUser, $role, $referralCode, $signupAttribution);
         } else {
             $user->forceFill([
             'google_id' => $user->google_id ?: $googleUser->getId(),
@@ -294,7 +302,7 @@ class AuthController extends Controller
         ]);
     }
 
-    private function createUserFromGoogle($googleUser, string $role, ?string $referralCode = null): User
+    private function createUserFromGoogle($googleUser, string $role, ?string $referralCode = null, array $signupAttribution = []): User
     {
         $validatedRole = $this->sanitizeRole($role);
         $username = $this->generateUniqueUsername(
@@ -303,7 +311,7 @@ class AuthController extends Controller
         );
         $referrer = $this->resolveReferrerFromCode($referralCode);
 
-        $user = DB::transaction(function () use ($username, $googleUser, $validatedRole, $referrer, $referralCode) {
+        $user = DB::transaction(function () use ($username, $googleUser, $validatedRole, $referrer, $referralCode, $signupAttribution) {
             $user = User::create([
                 'username' => $username,
                 'email' => $googleUser->getEmail(),
@@ -312,6 +320,9 @@ class AuthController extends Controller
                 'full_name' => $googleUser->getName(),
                 'google_id' => $googleUser->getId(),
                 'avatar' => $googleUser->getAvatar(),
+                'signup_source' => $this->sanitizeSignupSource($signupAttribution['signup_source'] ?? null),
+                'signup_referrer' => $signupAttribution['signup_referrer'] ?? null,
+                'signup_utm_campaign' => $signupAttribution['signup_utm_campaign'] ?? null,
                 'referral_code' => $this->generateUniqueReferralCode($username),
                 'referred_by_user_id' => $referrer?->id,
             ]);
