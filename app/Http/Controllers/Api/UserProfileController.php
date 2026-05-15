@@ -91,9 +91,11 @@ class UserProfileController extends Controller
             'full_name' => ['nullable', 'string', 'max:120'],
             'about' => ['nullable', 'string', 'max:1000'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'dob' => ['nullable', 'date', 'before_or_equal:today'],
+            'gender' => ['nullable', Rule::in(['male', 'female'])],
         ]);
 
-        foreach (['username', 'full_name', 'about', 'phone'] as $field) {
+        foreach (['username', 'full_name', 'about', 'phone', 'dob', 'gender'] as $field) {
             if (array_key_exists($field, $data)) {
                 $user->{$field} = $data[$field] ?? null;
             }

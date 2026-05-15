@@ -145,13 +145,13 @@ class WishlistController extends Controller
         if ($type === 'event') {
             return Event::query()
                 ->with(['organization:id,organization_name', 'category:id,name,image'])
-                ->where('status', 'published')
+                ->whereIn('status', ['published', 'expired'])
                 ->find($id);
         }
 
         return Offer::query()
             ->with(['organization:id,organization_name', 'category:id,name,image'])
-            ->where('status', 'active')
+            ->whereIn('status', ['published', 'expired'])
             ->find($id);
     }
 
