@@ -10,6 +10,7 @@ class HighlightReelReaction extends BaseModel
 
     protected $fillable = [
         'highlight_reel_id',
+        'highlight_reel_item_id',
         'offer_id',
         'event_id',
         'organization_id',
@@ -20,6 +21,11 @@ class HighlightReelReaction extends BaseModel
     public function highlight()
     {
         return $this->belongsTo(HighlightReel::class, 'highlight_reel_id');
+    }
+
+    public function item()
+    {
+        return $this->belongsTo(HighlightReelItem::class, 'highlight_reel_item_id');
     }
 
     public function user()

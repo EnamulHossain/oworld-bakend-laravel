@@ -156,24 +156,32 @@ class AuthController extends Controller
         // Keep response generic to avoid exposing whether an email exists.
         if (!$user) {
             return response()->json([
-                'message' => 'If this email exists, a temporary password has been sent.',
+                'message' => 'If this email exists, a password reset link has been sent.',
             ]);
         }
 
-        $temporaryPassword = $this->generateTemporaryPassword();
-        $user->password = Hash::make($temporaryPassword);
-        $user->save();
+        $token = Str::random(64);
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $user->email],
+            [
+                'token' => Hash::make($token),
+                'created_at' => now(),
+            ]
+        );
+
+        $resetUrl = $this->buildPasswordResetUrl($token);
 
         try {
             Mail::raw(
                 "Hello {$user->username},\n\n" .
-                "Your temporary password is: {$temporaryPassword}\n\n" .
-                "Please log in and change your password immediately from your profile settings.\n\n" .
+                "Click the link below to reset your Oworld password:\n\n" .
+                "{$resetUrl}\n\n" .
+                "This link will expire in 60 minutes. If you did not request a password reset, you can ignore this email.\n\n" .
                 "Regards,\nOworld Support",
                 function ($message) use ($user) {
                     $message->from('support@oworldbd.com', 'Oworld Support');
                     $message->to($user->email);
-                    $message->subject('Your Temporary Password - Oworld');
+                    $message->subject('Reset Your Password - Oworld');
                 }
             );
         } catch (\Throwable $e) {
@@ -183,12 +191,68 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'error' => 'Could not send temporary password email. Please try again later.',
+                'error' => 'Could not send password reset email. Please try again later.',
             ], 500);
         }
 
         return response()->json([
-            'message' => 'If this email exists, a temporary password has been sent.',
+            'message' => 'If this email exists, a password reset link has been sent.',
+        ]);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+            'token' => ['required', 'string'],
+            'password' => ['required', 'string', 'confirmed', Password::min(6)],
+        ]);
+
+        $reset = DB::table('password_reset_tokens')
+            ->where('email', $data['email'])
+            ->first();
+
+        if (!$reset || !Hash::check($data['token'], $reset->token)) {
+            return response()->json([
+                'message' => 'The password reset link is invalid.',
+                'errors' => [
+                    'email' => ['The password reset link is invalid.'],
+                    'token' => ['The password reset link is invalid.'],
+                ],
+            ], 422);
+        }
+
+        $expiresAt = now()->subMinutes(config('auth.passwords.users.expire', 60));
+        if (!$reset->created_at || \Illuminate\Support\Carbon::parse($reset->created_at)->lessThan($expiresAt)) {
+            DB::table('password_reset_tokens')->where('email', $data['email'])->delete();
+
+            return response()->json([
+                'message' => 'The password reset link has expired.',
+                'errors' => [
+                    'token' => ['The password reset link has expired.'],
+                ],
+            ], 422);
+        }
+
+        $user = User::where('email', $data['email'])->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'The password reset link is invalid.',
+                'errors' => [
+                    'email' => ['The password reset link is invalid.'],
+                ],
+            ], 422);
+        }
+
+        $user->password = Hash::make($data['password']);
+        $user->save();
+
+        DB::table('password_reset_tokens')->where('email', $data['email'])->delete();
+        $user->tokens()->delete();
+
+        return response()->json([
+            'message' => 'Password reset successfully. You can now log in with your new password.',
         ]);
     }
 
@@ -362,12 +426,11 @@ class AuthController extends Controller
         return Str::limit(preg_replace('/[^a-z0-9_-]+/', '-', $source), 50, '');
     }
 
-    private function generateTemporaryPassword(): string
+    private function buildPasswordResetUrl(string $token): string
     {
-        $letters = Str::upper(Str::random(4));
-        $numbers = (string) random_int(1000, 9999);
+        $frontendUrl = rtrim(env('FRONTEND_APP_URL', config('app.url', 'http://localhost')), '/');
 
-        return $letters . $numbers;
+        return $frontendUrl . '/reset-password?' . http_build_query(['token' => $token]);
     }
 
     private function decodeState(?string $state): array
