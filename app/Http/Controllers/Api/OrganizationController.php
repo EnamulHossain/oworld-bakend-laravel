@@ -9,10 +9,16 @@ use App\Models\Offer;
 use App\Models\Attribute;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class OrganizationController extends Controller
 {
+    private const MEDIA_UPLOAD_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'webm', 'mov', 'm4v', 'ogg', 'avi', 'mkv'];
+    private const MEDIA_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
     public function stats(Request $request)
     {
         $userId = $request->user()->id;
@@ -198,16 +204,20 @@ class OrganizationController extends Controller
 
     public function uploadBanner(Request $request)
     {
-        $request->validate([
-            'banner' => ['required', 'file', 'mimetypes:image/*,video/*', 'max:20480'],
-        ]);
-
-        $path = $request->file('banner')->store('uploads/events', 'public');
-        return response()->json([
-            'success' => true,
-            'bannerUrl' => '/storage/' . $path,
-            'mimeType' => $request->file('banner')->getClientMimeType(),
-        ], 201);
+        try {
+            $file = $this->validateMediaUpload($request, 'banner');
+            $path = $file->store('uploads/events', 'public');
+            return response()->json([
+                'success' => true,
+                'bannerUrl' => '/storage/' . $path,
+                'mimeType' => $file->getClientMimeType(),
+            ], 201);
+        } catch (ValidationException $exception) {
+            return $this->uploadValidationResponse($exception, 'Failed to upload banner media.');
+        } catch (Throwable $exception) {
+            Log::error('Organization event banner upload failed', ['error' => $exception->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Failed to store uploaded media.'], 500);
+        }
     }
 
     public function uploadThumbnail(Request $request)
@@ -354,16 +364,68 @@ class OrganizationController extends Controller
 
     public function uploadOfferMedia(Request $request)
     {
-        $request->validate([
-            'file' => ['required', 'file', 'mimetypes:image/*,video/*', 'max:20480'],
-        ]);
+        try {
+            $file = $this->validateMediaUpload($request, 'file');
+            $path = $file->store('uploads/offers', 'public');
+            return response()->json([
+                'success' => true,
+                'fileUrl' => '/storage/' . $path,
+                'mimeType' => $file->getClientMimeType(),
+            ], 201);
+        } catch (ValidationException $exception) {
+            return $this->uploadValidationResponse($exception, 'Failed to upload media.');
+        } catch (Throwable $exception) {
+            Log::error('Organization offer media upload failed', ['error' => $exception->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Failed to store uploaded media.'], 500);
+        }
+    }
 
-        $path = $request->file('file')->store('uploads/offers', 'public');
+    private function validateMediaUpload(Request $request, string $field)
+    {
+        $file = $request->file($field);
+        if (!$file) {
+            throw ValidationException::withMessages([
+                $field => ['No file was received. Check PHP post_max_size and upload_max_filesize settings.'],
+            ]);
+        }
+
+        if (!$file->isValid()) {
+            throw ValidationException::withMessages([
+                $field => [$file->getErrorMessage() ?: 'The file failed to upload.'],
+            ]);
+        }
+
+        if ($file->getSize() > self::MEDIA_UPLOAD_MAX_BYTES) {
+            throw ValidationException::withMessages([
+                $field => ['The file must not be greater than 20 MB.'],
+            ]);
+        }
+
+        $extension = strtolower($file->getClientOriginalExtension());
+        if (!in_array($extension, self::MEDIA_UPLOAD_EXTENSIONS, true)) {
+            throw ValidationException::withMessages([
+                $field => ['Unsupported file type. Allowed types: ' . implode(', ', self::MEDIA_UPLOAD_EXTENSIONS) . '.'],
+            ]);
+        }
+
+        return $file;
+    }
+
+    private function uploadValidationResponse(ValidationException $exception, string $fallbackMessage)
+    {
+        $message = $fallbackMessage;
+        foreach ($exception->errors() as $messages) {
+            if (!empty($messages[0])) {
+                $message = $messages[0];
+                break;
+            }
+        }
+
         return response()->json([
-            'success' => true,
-            'fileUrl' => '/storage/' . $path,
-            'mimeType' => $request->file('file')->getClientMimeType(),
-        ], 201);
+            'success' => false,
+            'message' => $message,
+            'errors' => $exception->errors(),
+        ], 422);
     }
 
     private function toArrayField($value): array
