@@ -33,7 +33,7 @@ class AdminController extends Controller
     public function users(Request $request)
     {
         $columns = ['id', 'username', 'email', 'role', 'organization_name', 'created_at'];
-        foreach (['full_name', 'phone', 'dob', 'gender', 'signup_source', 'google_id'] as $column) {
+        foreach (['full_name', 'first_name', 'last_name', 'phone', 'dob', 'gender', 'signup_source', 'google_id'] as $column) {
             if (Schema::hasColumn('users', $column)) {
                 $columns[] = $column;
             }

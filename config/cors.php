@@ -9,6 +9,8 @@ return [
         'http://127.0.0.1:3000',
         'http://localhost:5173',
         'http://127.0.0.1:5173',
+        'http://localhost:9001',
+        'http://127.0.0.1:9001',
         'https://oworldbd.com',
         'https://oworld.ibrahimaaraf.com',
         'https://owbacktest.ibrahimaaraf.com',

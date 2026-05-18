@@ -35,6 +35,8 @@ class User extends BaseAuthenticatable
         'website_url',
         'google_map_url',
         'full_name',
+        'first_name',
+        'last_name',
         'dob',
         'gender',
         'about',

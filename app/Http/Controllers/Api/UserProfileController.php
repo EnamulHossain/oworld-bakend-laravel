@@ -89,13 +89,22 @@ class UserProfileController extends Controller
                 Rule::unique('users', 'username')->ignore($user->id),
             ],
             'full_name' => ['nullable', 'string', 'max:120'],
+            'first_name' => ['nullable', 'string', 'max:60'],
+            'last_name' => ['nullable', 'string', 'max:60'],
             'about' => ['nullable', 'string', 'max:1000'],
             'phone' => ['nullable', 'string', 'max:30'],
             'dob' => ['nullable', 'date', 'before_or_equal:today'],
             'gender' => ['nullable', Rule::in(['male', 'female'])],
         ]);
 
-        foreach (['username', 'full_name', 'about', 'phone', 'dob', 'gender'] as $field) {
+        if (array_key_exists('first_name', $data) || array_key_exists('last_name', $data)) {
+            $data['full_name'] = trim(implode(' ', array_filter([
+                $data['first_name'] ?? '',
+                $data['last_name'] ?? '',
+            ]))) ?: null;
+        }
+
+        foreach (['username', 'full_name', 'first_name', 'last_name', 'about', 'phone', 'dob', 'gender'] as $field) {
             if (array_key_exists($field, $data)) {
                 $user->{$field} = $data[$field] ?? null;
             }

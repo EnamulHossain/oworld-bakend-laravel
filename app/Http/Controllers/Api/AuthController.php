@@ -32,6 +32,8 @@ class AuthController extends Controller
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
             'full_name' => ['nullable', 'string', 'max:120'],
+            'first_name' => ['nullable', 'string', 'max:60'],
+            'last_name' => ['nullable', 'string', 'max:60'],
             'dob' => ['nullable', 'date'],
             'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'about' => ['nullable', 'string', 'max:1000'],
@@ -70,6 +72,8 @@ class AuthController extends Controller
                 'business_type' => $data['business_type'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'full_name' => $data['full_name'] ?? null,
+                'first_name' => $data['first_name'] ?? null,
+                'last_name' => $data['last_name'] ?? null,
                 'gender' => $data['gender'] ?? null,
                 'dob' => $data['dob'] ?? null,
                 'about' => $data['about'] ?? null,
@@ -369,6 +373,7 @@ class AuthController extends Controller
     private function createUserFromGoogle($googleUser, string $role, ?string $referralCode = null, array $signupAttribution = []): User
     {
         $validatedRole = $this->sanitizeRole($role);
+        [$firstName, $lastName] = $this->splitFullName($googleUser->getName());
         $username = $this->generateUniqueUsername(
             $googleUser->getNickname() ?: $googleUser->getName(),
             $googleUser->getEmail()
@@ -382,6 +387,8 @@ class AuthController extends Controller
                 'password' => Hash::make(Str::random(16)),
                 'role' => $validatedRole,
                 'full_name' => $googleUser->getName(),
+                'first_name' => $firstName,
+                'last_name' => $lastName,
                 'google_id' => $googleUser->getId(),
                 'avatar' => $googleUser->getAvatar(),
                 'signup_source' => $this->sanitizeSignupSource($signupAttribution['signup_source'] ?? null),
@@ -402,6 +409,21 @@ class AuthController extends Controller
         $user->syncRoles([$validatedRole]);
 
         return $user;
+    }
+
+    private function splitFullName(?string $fullName): array
+    {
+        $name = trim((string) $fullName);
+        if ($name === '') {
+            return [null, null];
+        }
+
+        $parts = preg_split('/\s+/', $name, 2);
+
+        return [
+            $parts[0] ?? null,
+            $parts[1] ?? null,
+        ];
     }
 
     private function sanitizeRole(?string $role): string
