@@ -78,8 +78,8 @@ class AuthController extends Controller
                 'dob' => $data['dob'] ?? null,
                 'about' => $data['about'] ?? null,
                 'signup_source' => $this->sanitizeSignupSource($data['signup_source'] ?? null),
-                'signup_referrer' => $data['signup_referrer'] ?? null,
-                'signup_utm_campaign' => $data['signup_utm_campaign'] ?? null,
+                'signup_referrer' => $this->sanitizeSignupReferrer($data['signup_referrer'] ?? null),
+                'signup_utm_campaign' => $this->limitNullableString($data['signup_utm_campaign'] ?? null, 150),
                 'referral_code' => $this->generateUniqueReferralCode($data['username']),
                 'referred_by_user_id' => $referrer?->id,
             ]);
@@ -273,8 +273,8 @@ class AuthController extends Controller
             'role' => $this->sanitizeRole($request->query('role')),
             'referral_code' => trim((string) $request->query('referral_code', '')) ?: null,
             'signup_source' => $this->sanitizeSignupSource($request->query('signup_source')),
-            'signup_referrer' => $request->query('signup_referrer'),
-            'signup_utm_campaign' => $request->query('signup_utm_campaign'),
+            'signup_referrer' => $this->sanitizeSignupReferrer($request->query('signup_referrer')),
+            'signup_utm_campaign' => $this->limitNullableString($request->query('signup_utm_campaign'), 150),
         ]);
 
         $redirectUrl = $this->googleProvider($request)
@@ -293,8 +293,8 @@ class AuthController extends Controller
         $referralCode = trim((string) ($state['referral_code'] ?? '')) ?: null;
         $signupAttribution = [
             'signup_source' => $this->sanitizeSignupSource($state['signup_source'] ?? null),
-            'signup_referrer' => $state['signup_referrer'] ?? null,
-            'signup_utm_campaign' => $state['signup_utm_campaign'] ?? null,
+            'signup_referrer' => $this->sanitizeSignupReferrer($state['signup_referrer'] ?? null),
+            'signup_utm_campaign' => $this->limitNullableString($state['signup_utm_campaign'] ?? null, 150),
         ];
 
         if ($request->filled('error')) {
@@ -392,8 +392,8 @@ class AuthController extends Controller
                 'google_id' => $googleUser->getId(),
                 'avatar' => $googleUser->getAvatar(),
                 'signup_source' => $this->sanitizeSignupSource($signupAttribution['signup_source'] ?? null),
-                'signup_referrer' => $signupAttribution['signup_referrer'] ?? null,
-                'signup_utm_campaign' => $signupAttribution['signup_utm_campaign'] ?? null,
+                'signup_referrer' => $this->sanitizeSignupReferrer($signupAttribution['signup_referrer'] ?? null),
+                'signup_utm_campaign' => $this->limitNullableString($signupAttribution['signup_utm_campaign'] ?? null, 150),
                 'referral_code' => $this->generateUniqueReferralCode($username),
                 'referred_by_user_id' => $referrer?->id,
             ]);
@@ -446,6 +446,33 @@ class AuthController extends Controller
         };
 
         return Str::limit(preg_replace('/[^a-z0-9_-]+/', '-', $source), 50, '');
+    }
+
+    private function sanitizeSignupReferrer(?string $referrer): ?string
+    {
+        $referrer = $this->limitNullableString($referrer, 500);
+
+        if (!$referrer) {
+            return null;
+        }
+
+        $path = parse_url($referrer, PHP_URL_PATH);
+        if ($path && Str::startsWith($path, '/oauth/google/callback')) {
+            return null;
+        }
+
+        return $referrer;
+    }
+
+    private function limitNullableString(?string $value, int $limit): ?string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return Str::limit($value, $limit, '');
     }
 
     private function buildPasswordResetUrl(string $token): string
