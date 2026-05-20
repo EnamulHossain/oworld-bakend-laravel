@@ -113,8 +113,22 @@ class AuthController extends Controller
         $identifier = trim($data['email']);
         $user = $this->findUserForLogin($identifier);
 
-        if (!$user || !Hash::check($data['password'], $user->password)) {
-            return response()->json(['error' => 'Invalid email or password.'], 401);
+        if (!$user) {
+            return response()->json([
+                'message' => 'Please enter a valid email address.',
+                'errors' => [
+                    'email' => ['Please enter a valid email address.'],
+                ],
+            ], 401);
+        }
+
+        if (!Hash::check($data['password'], $user->password)) {
+            return response()->json([
+                'message' => 'The entered password is incorrect.',
+                'errors' => [
+                    'password' => ['The entered password is incorrect.'],
+                ],
+            ], 401);
         }
         if (($user->status ?? 'active') !== 'active') {
             return response()->json(['error' => 'Your account is inactive. Please contact support.'], 403);
