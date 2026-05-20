@@ -2594,6 +2594,8 @@ class AdminController extends Controller
 
     public function listAttributes(Request $request)
     {
+        $this->expireAttributesIfNeeded();
+
         $query = Attribute::query()
             ->with(['values' => fn ($q) => $q->orderBy('id')]);
 
@@ -2613,13 +2615,14 @@ class AdminController extends Controller
             $query->where('category_id', $request->query('category_id'));
         }
         if ($request->query('status')) {
-            $query->where('status', $request->query('status'));
+            $status = $this->normalizeAttributeStatus($request->query('status'));
+            $query->where('status', $status);
         }
 
         $attributes = $query
             ->orderByRaw('category_id IS NULL')
             ->orderBy('category_id')
-            ->orderBy('sort_order')
+            ->orderByDesc('sort_order')
             ->orderBy('name')
             ->orderBy('id')
             ->get();
@@ -2636,20 +2639,31 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'auto_expires' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
-            'status' => ['nullable', Rule::in(['active', 'draft', 'inactive'])],
+            'status' => ['nullable', Rule::in(['published', 'draft', 'expired'])],
             'values' => ['nullable', 'array'],
         ]);
 
         return DB::transaction(function () use ($data) {
+            $status = $this->resolveAttributeStatusForSave(
+                $data['status'] ?? 'published',
+                $data['end_date'] ?? null,
+                (bool) ($data['auto_expires'] ?? true)
+            );
             $type = $data['type'];
             $categoryId = $type === 'offer' ? ($data['category_id'] ?? null) : null;
             $attribute = Attribute::create([
                 'name' => $data['name'],
                 'type' => $type,
                 'category_id' => $categoryId,
-                'sort_order' => (int) ($data['sort_order'] ?? 0),
-                'status' => $data['status'] ?? 'active',
+                'start_date' => $data['start_date'],
+                'end_date' => $data['end_date'] ?? null,
+                'auto_expires' => (bool) ($data['auto_expires'] ?? true),
+                'sort_order' => $this->resolveAttributeSortOrder($data['sort_order'] ?? null),
+                'status' => $status,
             ]);
 
             $values = $this->normalizeAttributeValues($data['values'] ?? []);
@@ -2675,8 +2689,11 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'auto_expires' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
-            'status' => ['sometimes', Rule::in(['active', 'draft', 'inactive'])],
+            'status' => ['sometimes', Rule::in(['published', 'draft', 'expired'])],
             'values' => ['nullable', 'array'],
         ]);
 
@@ -2696,8 +2713,15 @@ class AdminController extends Controller
             if (array_key_exists('sort_order', $data)) {
                 $attribute->sort_order = (int) ($data['sort_order'] ?? 0);
             }
+            $attribute->start_date = $data['start_date'];
+            $attribute->end_date = $data['end_date'] ?? null;
+            $attribute->auto_expires = (bool) ($data['auto_expires'] ?? true);
             if (array_key_exists('status', $data)) {
-                $attribute->status = $data['status'];
+                $attribute->status = $this->resolveAttributeStatusForSave(
+                    $data['status'],
+                    $attribute->end_date,
+                    (bool) $attribute->auto_expires
+                );
             }
             $attribute->save();
 
@@ -2708,6 +2732,7 @@ class AdminController extends Controller
                     fn ($item) => $this->normalizeAttributeValueKey((string) ($item->value ?? ''))
                 );
                 $seen = [];
+                $keepIds = [];
 
                 foreach ($values as $valuePayload) {
                     $key = $this->normalizeAttributeValueKey((string) ($valuePayload['value'] ?? ''));
@@ -2719,19 +2744,20 @@ class AdminController extends Controller
                     $existing = $existingByKey->get($key);
                     if ($existing) {
                         $existing->update([
+                            'value' => $valuePayload['value'],
                             'color_code' => $valuePayload['color_code'] ?? null,
                         ]);
+                        $keepIds[] = $existing->id;
                         continue;
                     }
 
-                    $attribute->values()->create($valuePayload);
+                    $created = $attribute->values()->create($valuePayload);
+                    $keepIds[] = $created->id;
                 }
 
                 if (!empty($seen)) {
                     $attribute->values()
-                        ->whereNotIn('id', $existingValues
-                            ->filter(fn ($item) => isset($seen[$this->normalizeAttributeValueKey((string) ($item->value ?? ''))]))
-                            ->pluck('id'))
+                        ->whereNotIn('id', $keepIds)
                         ->delete();
                 } else {
                     $attribute->values()->delete();
@@ -2754,6 +2780,50 @@ class AdminController extends Controller
     {
         $attribute->delete();
         return response()->json(['success' => true]);
+    }
+
+    private function expireAttributesIfNeeded(): void
+    {
+        Attribute::query()
+            ->where('status', 'published')
+            ->where('auto_expires', true)
+            ->whereNotNull('end_date')
+            ->whereDate('end_date', '<', now('Asia/Dhaka')->toDateString())
+            ->update(['status' => 'expired']);
+    }
+
+    private function normalizeAttributeStatus(?string $status): string
+    {
+        return match (strtolower((string) $status)) {
+            'active' => 'published',
+            'inactive' => 'draft',
+            default => strtolower((string) $status),
+        };
+    }
+
+    private function resolveAttributeStatusForSave(?string $status, $endDate, bool $autoExpires): string
+    {
+        $normalized = $this->normalizeAttributeStatus($status ?: 'published');
+        if (
+            $autoExpires &&
+            $endDate &&
+            $normalized === 'published' &&
+            Carbon::parse($endDate, 'Asia/Dhaka')->lt(now('Asia/Dhaka')->startOfDay())
+        ) {
+            return 'expired';
+        }
+
+        return $normalized;
+    }
+
+    private function resolveAttributeSortOrder($sortOrder): int
+    {
+        $requestedOrder = (int) ($sortOrder ?? 0);
+        if ($requestedOrder > 0) {
+            return $requestedOrder;
+        }
+
+        return ((int) Attribute::max('sort_order')) + 1;
     }
 
     private function generateUniqueCouponCode(?string $couponName = null): string

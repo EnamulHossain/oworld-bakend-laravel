@@ -1610,8 +1610,16 @@ class PublicController extends Controller
 
     public function attributes(Request $request)
     {
+        $this->expireAttributesIfNeeded();
+        $today = now('Asia/Dhaka')->toDateString();
+        $status = $this->normalizeAttributeStatus($request->query('status') ?: 'published');
+
         $query = Attribute::query()
-            ->where('status', 'active')
+            ->where('status', $status)
+            ->where(function ($query) use ($today) {
+                $query->whereNull('start_date')
+                    ->orWhereDate('start_date', '<=', $today);
+            })
             ->with(['values' => fn ($q) => $q->orderBy('id')]);
 
         if ($request->query('search')) {
@@ -1626,7 +1634,7 @@ class PublicController extends Controller
         }
 
         $attributes = $query
-            ->orderBy('sort_order')
+            ->orderByDesc('sort_order')
             ->orderBy('name')
             ->orderBy('id')
             ->get();
@@ -1635,5 +1643,24 @@ class PublicController extends Controller
             'success' => true,
             'attributes' => $attributes,
         ]);
+    }
+
+    private function expireAttributesIfNeeded(): void
+    {
+        Attribute::query()
+            ->where('status', 'published')
+            ->where('auto_expires', true)
+            ->whereNotNull('end_date')
+            ->whereDate('end_date', '<', now('Asia/Dhaka')->toDateString())
+            ->update(['status' => 'expired']);
+    }
+
+    private function normalizeAttributeStatus(?string $status): string
+    {
+        return match (strtolower((string) $status)) {
+            'active' => 'published',
+            'inactive' => 'draft',
+            default => strtolower((string) $status),
+        };
     }
 }

@@ -12,8 +12,17 @@ class Attribute extends BaseModel
         'name',
         'type',
         'category_id',
+        'start_date',
+        'end_date',
+        'auto_expires',
         'sort_order',
         'status',
+    ];
+
+    protected $casts = [
+        'start_date' => 'date',
+        'end_date' => 'date',
+        'auto_expires' => 'boolean',
     ];
 
     public function values()
