@@ -394,7 +394,7 @@ class AuthController extends Controller
         );
         $referrer = $this->resolveReferrerFromCode($referralCode);
 
-        $user = DB::transaction(function () use ($username, $googleUser, $validatedRole, $referrer, $referralCode, $signupAttribution) {
+        $user = DB::transaction(function () use ($username, $googleUser, $validatedRole, $referrer, $referralCode, $signupAttribution, $firstName, $lastName) {
             $user = User::create([
                 'username' => $username,
                 'email' => $googleUser->getEmail(),
