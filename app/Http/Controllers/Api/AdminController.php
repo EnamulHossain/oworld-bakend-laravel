@@ -1618,9 +1618,9 @@ class AdminController extends Controller
         $this->expireCouponsIfNeeded([$coupon->id]);
         $coupon->refresh();
 
-        if (in_array($coupon->status, ['expired', 'archived'], true)) {
+        if ($coupon->status === 'archived') {
             return response()->json([
-                'error' => 'Expired or archived coupons are read-only.',
+                'error' => 'Archived coupons are read-only.',
             ], 422);
         }
 
@@ -1645,9 +1645,9 @@ class AdminController extends Controller
         $this->expireCouponsIfNeeded([$coupon->id]);
         $coupon->refresh();
 
-        if (in_array($coupon->status, ['expired', 'archived'], true)) {
+        if ($coupon->status === 'archived') {
             return response()->json([
-                'error' => 'Expired or archived coupons are read-only.',
+                'error' => 'Archived coupons are read-only.',
             ], 422);
         }
 
@@ -1746,20 +1746,62 @@ class AdminController extends Controller
             $master = $coupon;
 
             if ($master) {
-                $hasLockedCodes = $master->details()
+                $lockedCodesQuery = $master->details()
                     ->where(function ($query) {
                         $query->whereNotNull('claimed_by_user_id')
                             ->orWhereNotNull('claimed_at')
                             ->orWhere('is_used', true)
                             ->orWhereNotNull('user_id')
                             ->orWhereNotNull('used_at');
-                    })
-                    ->exists();
+                    });
+                $hasLockedCodes = $lockedCodesQuery->exists();
 
                 if ($hasLockedCodes) {
-                    throw ValidationException::withMessages([
-                        'coupon' => 'Coupons that have claimed or used codes cannot be edited.',
-                    ]);
+                    $existingCodeCount = $master->details()->count();
+                    $requestedCodeCount = max(1, (int) ($tiers[0]['quantity'] ?? $masterPayload['total_coupon'] ?? $existingCodeCount));
+                    $masterPayload['total_coupon'] = max($requestedCodeCount, $existingCodeCount);
+
+                    $master->update($masterPayload);
+
+                    $master->details()
+                        ->whereNull('claimed_by_user_id')
+                        ->whereNull('claimed_at')
+                        ->where(function ($query) {
+                            $query->where('is_used', false)->orWhereNull('is_used');
+                        })
+                        ->whereNull('user_id')
+                        ->whereNull('used_at')
+                        ->update([
+                            'offer_id' => $data['offer_id'] ?? null,
+                            'event_id' => $data['event_id'] ?? null,
+                            'organization_id' => $organizationId,
+                            'updated_by' => $request->user()->id,
+                            'updated_at' => now(),
+                        ]);
+
+                    for ($codeIndex = $existingCodeCount; $codeIndex < $requestedCodeCount; $codeIndex++) {
+                        CouponDetail::create([
+                            'coupon_id' => $master->id,
+                            'coupon_tier_id' => null,
+                            'coupon' => $this->generateUniqueCouponCode($master->name),
+                            'offer_id' => $data['offer_id'] ?? null,
+                            'event_id' => $data['event_id'] ?? null,
+                            'organization_id' => $organizationId,
+                            'discount_type' => null,
+                            'discount_value' => null,
+                            'max_discount_amount' => null,
+                            'min_order_amount' => null,
+                            'referral_required_count' => 0,
+                            'claimed_by_user_id' => null,
+                            'claimed_at' => null,
+                            'created_by' => $master->created_by ?: $request->user()->id,
+                            'updated_by' => $request->user()->id,
+                            'is_used' => false,
+                            'used_at' => null,
+                        ]);
+                    }
+
+                    return $master;
                 }
 
                 $master->update($masterPayload);
