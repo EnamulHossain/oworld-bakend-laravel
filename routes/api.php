@@ -27,6 +27,8 @@ Route::get('public/events/{event}', [PublicController::class, 'eventDetail']);
 Route::get('public/offers', [PublicController::class, 'offers']);
 Route::get('public/offers/highlights', [PublicController::class, 'offerHighlights']);
 Route::get('public/offers/{offer}', [PublicController::class, 'offerDetail']);
+Route::get('public/organizations', [PublicController::class, 'organizations']);
+Route::get('public/organizations/{organization}', [PublicController::class, 'organizationDetail']);
 Route::get('public/highlights', [PublicController::class, 'highlights']);
 Route::get('public/content-blocks', [PublicController::class, 'contentBlocks']);
 Route::get('public/attributes', [PublicController::class, 'attributes']);
@@ -126,6 +128,12 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
 
 Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')->group(function () {
     Route::get('stats', [OrganizationController::class, 'stats']);
+    Route::get('profile', [OrganizationController::class, 'profile']);
+    Route::put('profile', [OrganizationController::class, 'updateProfile']);
+    Route::get('branches', [OrganizationController::class, 'listBranches']);
+    Route::post('branches', [OrganizationController::class, 'storeBranch']);
+    Route::put('branches/{branch}', [OrganizationController::class, 'updateBranch']);
+    Route::delete('branches/{branch}', [OrganizationController::class, 'deleteBranch']);
     Route::get('categories', [OrganizationController::class, 'categories']);
     Route::get('attributes', [OrganizationController::class, 'attributes']);
 

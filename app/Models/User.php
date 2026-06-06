@@ -42,6 +42,11 @@ class User extends BaseAuthenticatable
         'about',
         'google_id',
         'avatar',
+        'profile_banner',
+        'opening_hours',
+        'follower_count',
+        'rating_average',
+        'review_count',
         'referral_code',
         'referred_by_user_id',
         'signup_source',
@@ -96,6 +101,11 @@ class User extends BaseAuthenticatable
     public function organizationOffers()
     {
         return $this->hasMany(Offer::class, 'organization_id');
+    }
+
+    public function branches()
+    {
+        return $this->hasMany(OrganizationBranch::class, 'organization_id');
     }
 
     public function wishlistItems()

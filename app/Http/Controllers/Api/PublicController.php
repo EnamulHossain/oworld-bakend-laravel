@@ -15,6 +15,7 @@ use App\Models\HighlightReelReaction;
 use App\Models\HighlightReelShare;
 use App\Models\Offer;
 use App\Models\Attribute;
+use App\Models\User;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -565,9 +566,10 @@ class PublicController extends Controller
 
         $query = Offer::query()
             ->with([
-                'organization:id,organization_name',
+                'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours',
                 'category:id,name',
                 'area:id,name',
+                'branches:id,name,address,phone,google_map_url,opening_hours,status',
             ])
             ->whereIn('status', ['published', 'expired'])
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
@@ -633,6 +635,22 @@ class PublicController extends Controller
                     'cover' => $offer->cover,
                     'image' => $offer->thumbnail ?: ($offer->cover ?: ($images[0] ?? null)),
                     'organizationName' => $offer->organization?->organization_name,
+                    'organization' => $offer->organization ? [
+                        'id' => $offer->organization->id,
+                        'organizationName' => $offer->organization->organization_name,
+                        'username' => $offer->organization->username,
+                        'avatar' => $offer->organization->avatar,
+                        'profile_banner' => $offer->organization->profile_banner,
+                    ] : null,
+                    'available_branches' => $offer->branches->map(fn ($branch) => [
+                        'id' => $branch->id,
+                        'name' => $branch->name,
+                        'address' => $branch->address,
+                        'phone' => $branch->phone,
+                        'google_map_url' => $branch->google_map_url,
+                        'opening_hours' => $branch->opening_hours,
+                        'status' => $branch->status,
+                    ])->values(),
                     'category_id' => $offer->category_id,
                     'area_id' => $offer->area_id,
                     'is_recurring' => (bool) $offer->is_recurring,
@@ -1055,7 +1073,12 @@ class PublicController extends Controller
 
         $user = Auth::guard('sanctum')->user();
         $offer = Offer::query()
-            ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
+            ->with([
+                'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours,facebook_url,instagram_url,website_url,google_map_url',
+                'category:id,name',
+                'area:id,name',
+                'branches:id,name,address,phone,google_map_url,opening_hours,status',
+            ])
             ->where('status', 'published')
             ->find($id);
 
@@ -1098,8 +1121,28 @@ class PublicController extends Controller
                 'serial' => $offer->sort_order ?? 0,
                 'offer_type' => $offer->offer_type ?? 'regular',
                 'organization' => $offer->organization ? [
+                    'id' => $offer->organization->id,
                     'organizationName' => $offer->organization->organization_name,
+                    'username' => $offer->organization->username,
+                    'avatar' => $offer->organization->avatar,
+                    'profile_banner' => $offer->organization->profile_banner,
+                    'address' => $offer->organization->address,
+                    'phone' => $offer->organization->phone,
+                    'opening_hours' => $offer->organization->opening_hours,
+                    'facebook_url' => $offer->organization->facebook_url,
+                    'instagram_url' => $offer->organization->instagram_url,
+                    'website_url' => $offer->organization->website_url,
+                    'google_map_url' => $offer->organization->google_map_url,
                 ] : null,
+                'available_branches' => $offer->branches->map(fn ($branch) => [
+                    'id' => $branch->id,
+                    'name' => $branch->name,
+                    'address' => $branch->address,
+                    'phone' => $branch->phone,
+                    'google_map_url' => $branch->google_map_url,
+                    'opening_hours' => $branch->opening_hours,
+                    'status' => $branch->status,
+                ])->values(),
                 'category' => $offer->category ? [
                     'id' => $offer->category->id,
                     'name' => $offer->category->name,
@@ -1110,6 +1153,93 @@ class PublicController extends Controller
                 ] : null,
                 'coupons' => $this->getActiveCouponsForTarget('offer', (int) $offer->id, $user?->id),
             ],
+        ]);
+    }
+
+    public function organizations(Request $request)
+    {
+        $limit = min((int) $request->query('limit', 20), 100);
+        $offset = max((int) $request->query('offset', 0), 0);
+        $q = trim((string) $request->query('q', ''));
+        $area = trim((string) $request->query('area', ''));
+
+        $query = User::query()
+            ->where('role', 'organization')
+            ->where(function ($builder) {
+                $builder->whereNull('status')
+                    ->orWhereIn('status', ['active', 'published']);
+            })
+            ->with(['branches' => fn ($branchQuery) => $branchQuery->orderBy('sort_order')->orderBy('name')])
+            ->when($q !== '', function ($builder) use ($q) {
+                $builder->where(function ($inner) use ($q) {
+                    $inner->where('organization_name', 'like', "%{$q}%")
+                        ->orWhere('username', 'like', "%{$q}%")
+                        ->orWhere('business_type', 'like', "%{$q}%")
+                        ->orWhere('address', 'like', "%{$q}%")
+                        ->orWhereHas('branches', function ($branchQuery) use ($q) {
+                            $branchQuery->where('name', 'like', "%{$q}%")
+                                ->orWhere('address', 'like', "%{$q}%");
+                        });
+                });
+            })
+            ->when($area !== '', function ($builder) use ($area) {
+                $builder->where(function ($inner) use ($area) {
+                    $inner->where('address', 'like', "%{$area}%")
+                        ->orWhereHas('branches', fn ($branchQuery) => $branchQuery->where('address', 'like', "%{$area}%"));
+                });
+            })
+            ->orderBy('organization_name')
+            ->orderBy('username');
+
+        $total = (clone $query)->count();
+        $organizations = $query->skip($offset)->limit($limit)->get()->map(fn ($organization) => $this->formatPublicOrganization($organization));
+
+        return response()->json([
+            'success' => true,
+            'organizations' => $organizations,
+            'pagination' => [
+                'limit' => $limit,
+                'offset' => $offset,
+                'total' => $total,
+                'count' => $organizations->count(),
+                'has_more' => ($offset + $organizations->count()) < $total,
+            ],
+        ]);
+    }
+
+    public function organizationDetail($organization)
+    {
+        $this->syncOfferAndEventLifecycle();
+
+        $record = User::query()
+            ->where('role', 'organization')
+            ->where(function ($builder) use ($organization) {
+                $builder->whereKey($organization)
+                    ->orWhere('username', $organization);
+            })
+            ->with(['branches' => fn ($query) => $query->orderBy('sort_order')->orderBy('name')])
+            ->first();
+
+        if (!$record) {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
+        $offers = Offer::query()
+            ->with(['category:id,name', 'branches:id,name,address,phone,google_map_url,opening_hours,status'])
+            ->where('organization_id', $record->id)
+            ->whereIn('status', ['published', 'active'])
+            ->orderBy('sort_order')
+            ->orderByDesc('created_at')
+            ->limit(12)
+            ->get()
+            ->map(fn ($offer) => $this->formatOrganizationOffer($offer));
+
+        return response()->json([
+            'success' => true,
+            'organization' => $this->formatPublicOrganization($record),
+            'offers' => $offers,
+            'posts' => [],
+            'reviews' => [],
         ]);
     }
 
@@ -1209,10 +1339,96 @@ class PublicController extends Controller
                 'date' => $offer->start_date,
             ]);
 
+        $organizations = User::query()
+            ->where('role', 'organization')
+            ->where(function ($builder) use ($q) {
+                $builder->where('organization_name', 'like', "%{$q}%")
+                    ->orWhere('username', 'like', "%{$q}%")
+                    ->orWhere('business_type', 'like', "%{$q}%")
+                    ->orWhere('address', 'like', "%{$q}%")
+                    ->orWhereHas('branches', function ($branchQuery) use ($q) {
+                        $branchQuery->where('name', 'like', "%{$q}%")
+                            ->orWhere('address', 'like', "%{$q}%");
+                    });
+            })
+            ->orderBy('organization_name')
+            ->limit($limit)
+            ->get(['id', 'organization_name', 'username', 'business_type', 'address', 'avatar'])
+            ->map(fn ($organization) => [
+                'type' => 'organization',
+                'id' => $organization->id,
+                'title' => $organization->organization_name ?: $organization->username,
+                'name' => $organization->organization_name ?: $organization->username,
+                'description' => $organization->business_type,
+                'subtitle' => $organization->address,
+                'image' => $organization->avatar,
+            ]);
+
         return response()->json([
             'success' => true,
-            'results' => $categories->concat($events)->concat($offers)->values(),
+            'results' => $organizations->concat($categories)->concat($events)->concat($offers)->values(),
         ]);
+    }
+
+    private function formatPublicOrganization(User $organization): array
+    {
+        return [
+            'id' => $organization->id,
+            'username' => $organization->username,
+            'organization_name' => $organization->organization_name,
+            'organizationName' => $organization->organization_name,
+            'business_type' => $organization->business_type,
+            'about' => $organization->about,
+            'phone' => $organization->phone,
+            'address' => $organization->address,
+            'avatar' => $organization->avatar,
+            'profile_banner' => $organization->profile_banner,
+            'opening_hours' => $organization->opening_hours,
+            'facebook_url' => $organization->facebook_url,
+            'instagram_url' => $organization->instagram_url,
+            'website_url' => $organization->website_url,
+            'google_map_url' => $organization->google_map_url,
+            'follower_count' => (int) ($organization->follower_count ?? 0),
+            'rating_average' => (float) ($organization->rating_average ?? 0),
+            'review_count' => (int) ($organization->review_count ?? 0),
+            'branches' => $organization->branches->map(fn ($branch) => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'address' => $branch->address,
+                'phone' => $branch->phone,
+                'google_map_url' => $branch->google_map_url,
+                'opening_hours' => $branch->opening_hours,
+                'status' => $branch->status,
+                'delivery_available' => (bool) $branch->delivery_available,
+            ])->values(),
+        ];
+    }
+
+    private function formatOrganizationOffer(Offer $offer): array
+    {
+        $images = is_array($offer->images) ? $offer->images : [];
+
+        return [
+            'id' => $offer->id,
+            'title' => $offer->name,
+            'name' => $offer->name,
+            'description' => $offer->details,
+            'details' => $offer->details,
+            'start_date' => $offer->start_date,
+            'end_date' => $offer->end_date,
+            'thumbnail' => $offer->thumbnail,
+            'cover' => $offer->cover,
+            'image' => $offer->thumbnail ?: ($offer->cover ?: ($images[0] ?? null)),
+            'category' => $offer->category ? [
+                'id' => $offer->category->id,
+                'name' => $offer->category->name,
+            ] : null,
+            'available_branches' => $offer->branches->map(fn ($branch) => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'address' => $branch->address,
+            ])->values(),
+        ];
     }
 
     public function trackAnalyticsEvent(Request $request)
