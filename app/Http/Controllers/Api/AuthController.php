@@ -30,7 +30,7 @@ class AuthController extends Controller
             'referral_code' => ['nullable', 'string', 'max:32'],
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
             'full_name' => ['nullable', 'string', 'max:120'],
             'first_name' => ['nullable', 'string', 'max:60'],
             'last_name' => ['nullable', 'string', 'max:60'],
@@ -40,6 +40,8 @@ class AuthController extends Controller
             'signup_source' => ['nullable', 'string', 'max:50'],
             'signup_referrer' => ['nullable', 'string', 'max:500'],
             'signup_utm_campaign' => ['nullable', 'string', 'max:150'],
+        ], [
+            'phone.regex' => 'Enter a valid 11-digit Bangladeshi mobile number starting with 013-019.',
         ]);
 
         $role = $data['role'] ?? 'user';
@@ -48,7 +50,7 @@ class AuthController extends Controller
             $request->validate([
                 'organization_name' => ['required', 'string', 'max:255'],
                 'business_type' => ['required', 'string', 'max:100'],
-                'phone' => ['required', 'string', 'max:30'],
+                'phone' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
             ]);
         }
 

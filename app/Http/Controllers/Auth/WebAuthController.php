@@ -43,16 +43,18 @@ class WebAuthController extends Controller
             'role' => ['required', Rule::in(['user', 'organization'])],
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
             'dob' => ['nullable', 'date'],
             'gender' => ['required', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
+        ], [
+            'phone.regex' => 'Enter a valid 11-digit Bangladeshi mobile number starting with 013-019.',
         ]);
 
         if ($data['role'] === 'organization') {
             $request->validate([
                 'organization_name' => ['required', 'string', 'max:255'],
                 'business_type' => ['required', 'string', 'max:100'],
-                'phone' => ['required', 'string', 'max:30'],
+                'phone' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
             ]);
         }
 
