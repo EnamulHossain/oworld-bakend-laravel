@@ -7,7 +7,6 @@ use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
 use App\Models\Attribute;
-use App\Models\OrganizationBranch;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -28,7 +27,6 @@ class OrganizationController extends Controller
         $publishedEvents = Event::where('organization_id', $userId)->where('status', 'published')->count();
         $upcomingEvents = Event::where('organization_id', $userId)->where('starting_date', '>', now())->count();
         $totalOffers = Offer::where('organization_id', $userId)->count();
-        $branchCount = OrganizationBranch::where('organization_id', $userId)->count();
 
         return response()->json([
             'success' => true,
@@ -37,14 +35,13 @@ class OrganizationController extends Controller
                 'publishedEvents' => $publishedEvents,
                 'upcomingEvents' => $upcomingEvents,
                 'totalOffers' => $totalOffers,
-                'branchCount' => $branchCount,
             ],
         ]);
     }
 
     public function profile(Request $request)
     {
-        $user = $request->user()->load(['branches' => fn ($query) => $query->orderBy('sort_order')->orderBy('name')]);
+        $user = $request->user();
 
         return response()->json([
             'success' => true,
@@ -73,65 +70,7 @@ class OrganizationController extends Controller
 
         return response()->json([
             'success' => true,
-            'profile' => $this->formatOrganizationProfile($request->user()->fresh('branches')),
-        ]);
-    }
-
-    public function listBranches(Request $request)
-    {
-        $branches = OrganizationBranch::query()
-            ->where('organization_id', $request->user()->id)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get();
-
-        return response()->json(['success' => true, 'branches' => $branches]);
-    }
-
-    public function storeBranch(Request $request)
-    {
-        $data = $this->validateBranch($request);
-        $branch = OrganizationBranch::create([
-            ...$data,
-            'organization_id' => $request->user()->id,
-        ]);
-
-        return response()->json(['success' => true, 'branch' => $branch], 201);
-    }
-
-    public function updateBranch(Request $request, OrganizationBranch $branch)
-    {
-        if ((int) $branch->organization_id !== (int) $request->user()->id) {
-            return response()->json(['error' => 'You are not allowed to manage this branch.'], 403);
-        }
-
-        $branch->update($this->validateBranch($request));
-
-        return response()->json(['success' => true, 'branch' => $branch]);
-    }
-
-    public function deleteBranch(Request $request, OrganizationBranch $branch)
-    {
-        if ((int) $branch->organization_id !== (int) $request->user()->id) {
-            return response()->json(['error' => 'You are not allowed to manage this branch.'], 403);
-        }
-
-        $branch->delete();
-
-        return response()->json(['success' => true]);
-    }
-
-    private function validateBranch(Request $request): array
-    {
-        return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'address' => ['nullable', 'string', 'max:500'],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'opening_hours' => ['nullable', 'string', 'max:120'],
-            'status' => ['nullable', Rule::in(['open', 'temporarily_closed', 'relocating', 'coming_soon'])],
-            'delivery_available' => ['nullable', 'boolean'],
-            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'profile' => $this->formatOrganizationProfile($request->user()->fresh()),
         ]);
     }
 
@@ -156,7 +95,6 @@ class OrganizationController extends Controller
             'follower_count' => (int) ($user->follower_count ?? 0),
             'rating_average' => (float) ($user->rating_average ?? 0),
             'review_count' => (int) ($user->review_count ?? 0),
-            'branches' => $user->branches?->values() ?? [],
         ];
     }
 
@@ -388,7 +326,7 @@ class OrganizationController extends Controller
         $userId = $request->user()->id;
         $query = Offer::query()
             ->where('organization_id', $userId)
-            ->with(['category:id,name', 'event:id,name', 'area:id,name', 'branches:id,name,address,phone,google_map_url,opening_hours,status'])
+            ->with(['category:id,name', 'event:id,name', 'area:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -429,8 +367,6 @@ class OrganizationController extends Controller
             'category_id' => ['nullable', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
-            'branch_ids' => ['nullable', 'array'],
-            'branch_ids.*' => ['integer', 'exists:organization_branches,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
 
@@ -438,9 +374,6 @@ class OrganizationController extends Controller
         if (!is_array($gallerySortOrder)) {
             $gallerySortOrder = [];
         }
-
-        $branchIds = $data['branch_ids'] ?? [];
-        unset($data['branch_ids']);
 
         $offer = Offer::create([
             ...$data,
@@ -451,8 +384,6 @@ class OrganizationController extends Controller
             'created_by' => $request->user()->id,
             'organization_id' => $request->user()->id,
         ]);
-
-        $this->syncOfferBranches($offer, $branchIds, $request->user()->id);
 
         return response()->json(['success' => true, 'offer' => $offer], 201);
     }
@@ -488,13 +419,8 @@ class OrganizationController extends Controller
             'category_id' => ['nullable', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
-            'branch_ids' => ['nullable', 'array'],
-            'branch_ids.*' => ['integer', 'exists:organization_branches,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
-
-        $branchIds = $data['branch_ids'] ?? [];
-        unset($data['branch_ids']);
 
         if (array_key_exists('images', $data)) {
             $data['images'] = $this->toArrayField($data['images']);
@@ -511,20 +437,7 @@ class OrganizationController extends Controller
         }
 
         $offer->update($data + ['updated_by' => $request->user()->id]);
-        $this->syncOfferBranches($offer, $branchIds, $request->user()->id);
-
-        return response()->json(['success' => true, 'offer' => $offer->fresh('branches')]);
-    }
-
-    private function syncOfferBranches(Offer $offer, array $branchIds, int $organizationId): void
-    {
-        $validBranchIds = OrganizationBranch::query()
-            ->where('organization_id', $organizationId)
-            ->whereIn('id', $branchIds)
-            ->pluck('id')
-            ->all();
-
-        $offer->branches()->sync($validBranchIds);
+        return response()->json(['success' => true, 'offer' => $offer->fresh()]);
     }
 
     public function deleteOffer(Request $request, Offer $offer)

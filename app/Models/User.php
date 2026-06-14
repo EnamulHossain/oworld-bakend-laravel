@@ -25,6 +25,7 @@ class User extends BaseAuthenticatable
         'email',
         'password',
         'role',
+        'parent_org_id',
         'status',
         'organization_name',
         'business_type',
@@ -103,9 +104,14 @@ class User extends BaseAuthenticatable
         return $this->hasMany(Offer::class, 'organization_id');
     }
 
-    public function branches()
+    public function parentOrganization()
     {
-        return $this->hasMany(OrganizationBranch::class, 'organization_id');
+        return $this->belongsTo(User::class, 'parent_org_id');
+    }
+
+    public function childOrganizations()
+    {
+        return $this->hasMany(User::class, 'parent_org_id');
     }
 
     public function wishlistItems()

@@ -569,7 +569,6 @@ class PublicController extends Controller
                 'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours',
                 'category:id,name',
                 'area:id,name',
-                'branches:id,name,address,phone,google_map_url,opening_hours,status',
             ])
             ->whereIn('status', ['published', 'expired'])
             ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
@@ -642,15 +641,6 @@ class PublicController extends Controller
                         'avatar' => $offer->organization->avatar,
                         'profile_banner' => $offer->organization->profile_banner,
                     ] : null,
-                    'available_branches' => $offer->branches->map(fn ($branch) => [
-                        'id' => $branch->id,
-                        'name' => $branch->name,
-                        'address' => $branch->address,
-                        'phone' => $branch->phone,
-                        'google_map_url' => $branch->google_map_url,
-                        'opening_hours' => $branch->opening_hours,
-                        'status' => $branch->status,
-                    ])->values(),
                     'category_id' => $offer->category_id,
                     'area_id' => $offer->area_id,
                     'is_recurring' => (bool) $offer->is_recurring,
@@ -1077,7 +1067,6 @@ class PublicController extends Controller
                 'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours,facebook_url,instagram_url,website_url,google_map_url',
                 'category:id,name',
                 'area:id,name',
-                'branches:id,name,address,phone,google_map_url,opening_hours,status',
             ])
             ->where('status', 'published')
             ->find($id);
@@ -1134,15 +1123,6 @@ class PublicController extends Controller
                     'website_url' => $offer->organization->website_url,
                     'google_map_url' => $offer->organization->google_map_url,
                 ] : null,
-                'available_branches' => $offer->branches->map(fn ($branch) => [
-                    'id' => $branch->id,
-                    'name' => $branch->name,
-                    'address' => $branch->address,
-                    'phone' => $branch->phone,
-                    'google_map_url' => $branch->google_map_url,
-                    'opening_hours' => $branch->opening_hours,
-                    'status' => $branch->status,
-                ])->values(),
                 'category' => $offer->category ? [
                     'id' => $offer->category->id,
                     'name' => $offer->category->name,
@@ -1169,23 +1149,17 @@ class PublicController extends Controller
                 $builder->whereNull('status')
                     ->orWhereIn('status', ['active', 'published']);
             })
-            ->with(['branches' => fn ($branchQuery) => $branchQuery->orderBy('sort_order')->orderBy('name')])
             ->when($q !== '', function ($builder) use ($q) {
                 $builder->where(function ($inner) use ($q) {
                     $inner->where('organization_name', 'like', "%{$q}%")
                         ->orWhere('username', 'like', "%{$q}%")
                         ->orWhere('business_type', 'like', "%{$q}%")
-                        ->orWhere('address', 'like', "%{$q}%")
-                        ->orWhereHas('branches', function ($branchQuery) use ($q) {
-                            $branchQuery->where('name', 'like', "%{$q}%")
-                                ->orWhere('address', 'like', "%{$q}%");
-                        });
+                        ->orWhere('address', 'like', "%{$q}%");
                 });
             })
             ->when($area !== '', function ($builder) use ($area) {
                 $builder->where(function ($inner) use ($area) {
-                    $inner->where('address', 'like', "%{$area}%")
-                        ->orWhereHas('branches', fn ($branchQuery) => $branchQuery->where('address', 'like', "%{$area}%"));
+                    $inner->where('address', 'like', "%{$area}%");
                 });
             })
             ->orderBy('organization_name')
@@ -1217,7 +1191,6 @@ class PublicController extends Controller
                 $builder->whereKey($organization)
                     ->orWhere('username', $organization);
             })
-            ->with(['branches' => fn ($query) => $query->orderBy('sort_order')->orderBy('name')])
             ->first();
 
         if (!$record) {
@@ -1225,7 +1198,7 @@ class PublicController extends Controller
         }
 
         $offers = Offer::query()
-            ->with(['category:id,name', 'branches:id,name,address,phone,google_map_url,opening_hours,status'])
+            ->with(['category:id,name'])
             ->where('organization_id', $record->id)
             ->whereIn('status', ['published', 'active'])
             ->orderBy('sort_order')
@@ -1345,11 +1318,7 @@ class PublicController extends Controller
                 $builder->where('organization_name', 'like', "%{$q}%")
                     ->orWhere('username', 'like', "%{$q}%")
                     ->orWhere('business_type', 'like', "%{$q}%")
-                    ->orWhere('address', 'like', "%{$q}%")
-                    ->orWhereHas('branches', function ($branchQuery) use ($q) {
-                        $branchQuery->where('name', 'like', "%{$q}%")
-                            ->orWhere('address', 'like', "%{$q}%");
-                    });
+                    ->orWhere('address', 'like', "%{$q}%");
             })
             ->orderBy('organization_name')
             ->limit($limit)
@@ -1391,16 +1360,6 @@ class PublicController extends Controller
             'follower_count' => (int) ($organization->follower_count ?? 0),
             'rating_average' => (float) ($organization->rating_average ?? 0),
             'review_count' => (int) ($organization->review_count ?? 0),
-            'branches' => $organization->branches->map(fn ($branch) => [
-                'id' => $branch->id,
-                'name' => $branch->name,
-                'address' => $branch->address,
-                'phone' => $branch->phone,
-                'google_map_url' => $branch->google_map_url,
-                'opening_hours' => $branch->opening_hours,
-                'status' => $branch->status,
-                'delivery_available' => (bool) $branch->delivery_available,
-            ])->values(),
         ];
     }
 
@@ -1423,11 +1382,6 @@ class PublicController extends Controller
                 'id' => $offer->category->id,
                 'name' => $offer->category->name,
             ] : null,
-            'available_branches' => $offer->branches->map(fn ($branch) => [
-                'id' => $branch->id,
-                'name' => $branch->name,
-                'address' => $branch->address,
-            ])->values(),
         ];
     }
 

@@ -127,12 +127,6 @@ class Offer extends BaseModel
         return $this->belongsTo(Area::class);
     }
 
-    public function branches()
-    {
-        return $this->belongsToMany(OrganizationBranch::class, 'offer_branch', 'offer_id', 'organization_branch_id')
-            ->withTimestamps();
-    }
-
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

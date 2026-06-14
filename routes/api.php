@@ -65,6 +65,7 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
     Route::delete('users/{user}', [AdminController::class, 'deleteUser']);
     Route::get('organizations', [AdminController::class, 'organizations']);
     Route::post('organizations', [AdminController::class, 'storeOrganization']);
+    Route::post('organizations/upload-image', [AdminController::class, 'uploadOrganizationImage']);
     Route::put('organizations/{user}', [AdminController::class, 'updateOrganization']);
     Route::get('stats', [AdminController::class, 'stats']);
     Route::get('analytics/clicks', [AdminController::class, 'analyticsClicks']);
@@ -130,10 +131,6 @@ Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')
     Route::get('stats', [OrganizationController::class, 'stats']);
     Route::get('profile', [OrganizationController::class, 'profile']);
     Route::put('profile', [OrganizationController::class, 'updateProfile']);
-    Route::get('branches', [OrganizationController::class, 'listBranches']);
-    Route::post('branches', [OrganizationController::class, 'storeBranch']);
-    Route::put('branches/{branch}', [OrganizationController::class, 'updateBranch']);
-    Route::delete('branches/{branch}', [OrganizationController::class, 'deleteBranch']);
     Route::get('categories', [OrganizationController::class, 'categories']);
     Route::get('attributes', [OrganizationController::class, 'attributes']);
 

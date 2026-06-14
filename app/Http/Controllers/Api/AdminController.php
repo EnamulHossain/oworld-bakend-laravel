@@ -188,34 +188,75 @@ class AdminController extends Controller
 
     public function organizations(Request $request)
     {
-        $organizations = User::query()
+        $query = User::query()
             ->where('role', 'organization')
+            ->when($request->boolean('top_level'), function ($q) {
+                $q->where(function ($inner) {
+                    $inner->whereNull('parent_org_id')
+                        ->orWhere('parent_org_id', 0);
+                });
+            })
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('username', 'like', "%{$term}%")
                         ->orWhere('organization_name', 'like', "%{$term}%")
                         ->orWhere('email', 'like', "%{$term}%");
                 });
-            })
-            ->orderByDesc('created_at')
-            ->get([
+            });
+
+        $sortColumns = ['organization_name', 'phone', 'email', 'username', 'created_at'];
+        $sortBy = $request->query('sort_by');
+        if (in_array($sortBy, $sortColumns, true)) {
+            $query->orderBy($sortBy, $request->query('sort_dir') === 'asc' ? 'asc' : 'desc')
+                ->orderByDesc('id');
+        } else {
+            $query->orderBy('organization_name')
+                ->orderBy('id');
+        }
+
+        $columns = [
                 'id',
+                'parent_org_id',
                 'username',
                 'email',
                 'organization_name',
                 'business_type',
                 'phone',
                 'address',
+                'about',
+                'avatar',
+                'profile_banner',
+                'opening_hours',
                 'facebook_url',
                 'instagram_url',
                 'website_url',
                 'google_map_url',
                 'created_at',
+        ];
+
+        if (!$request->hasAny(['page', 'limit'])) {
+            $organizations = $query->get($columns);
+
+            return response()->json([
+                'success' => true,
+                'organizations' => $organizations->map(fn (User $org) => $this->formatOrganization($org)),
             ]);
+        }
+
+        $organizations = $query->paginate(
+            min(max((int) $request->query('limit', 10), 1), 100),
+            $columns
+        );
 
         return response()->json([
             'success' => true,
-            'organizations' => $organizations->map(fn (User $org) => $this->formatOrganization($org)),
+            'organizations' => collect($organizations->items())->map(fn (User $org) => $this->formatOrganization($org)),
+            'pagination' => [
+                'current_page' => $organizations->currentPage(),
+                'last_page' => $organizations->lastPage(),
+                'per_page' => $organizations->perPage(),
+                'total' => $organizations->total(),
+            ],
         ]);
     }
 
@@ -228,6 +269,22 @@ class AdminController extends Controller
             'password' => ['nullable', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'parent_org_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('users', 'id')->where(fn ($query) => $query
+                    ->where('role', 'organization')
+                    ->whereNull('parent_org_id')),
+            ],
+            'address' => ['nullable', 'string', 'max:255'],
+            'about' => ['nullable', 'string'],
+            'avatar' => ['nullable', 'string', 'max:500'],
+            'profile_banner' => ['nullable', 'string', 'max:500'],
+            'opening_hours' => ['nullable', 'string', 'max:120'],
+            'facebook_url' => ['nullable', 'string', 'max:500'],
+            'instagram_url' => ['nullable', 'string', 'max:500'],
+            'website_url' => ['nullable', 'string', 'max:500'],
+            'google_map_url' => ['nullable', 'string', 'max:500'],
         ]);
 
         $organizationName = trim($data['organization_name']);
@@ -254,12 +311,21 @@ class AdminController extends Controller
             'email' => $email,
             'password' => Hash::make($password),
             'role' => 'organization',
+            'parent_org_id' => $data['parent_org_id'] ?? null,
             'organization_name' => $organizationName,
             'business_type' => $data['business_type'] ?? null,
             'phone' => $data['phone'] ?? null,
+            'address' => $data['address'] ?? null,
+            'avatar' => $data['avatar'] ?? null,
+            'profile_banner' => $data['profile_banner'] ?? null,
+            'opening_hours' => $data['opening_hours'] ?? null,
+            'facebook_url' => $data['facebook_url'] ?? null,
+            'instagram_url' => $data['instagram_url'] ?? null,
+            'website_url' => $data['website_url'] ?? null,
+            'google_map_url' => $data['google_map_url'] ?? null,
             'full_name' => null,
             'dob' => null,
-            'about' => null,
+            'about' => $data['about'] ?? null,
         ]);
 
         Role::firstOrCreate(['name' => 'organization', 'guard_name' => 'sanctum']);
@@ -285,6 +351,23 @@ class AdminController extends Controller
             'password' => ['nullable', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'parent_org_id' => [
+                'nullable',
+                'integer',
+                Rule::notIn([$user->id]),
+                Rule::exists('users', 'id')->where(fn ($query) => $query
+                    ->where('role', 'organization')
+                    ->whereNull('parent_org_id')),
+            ],
+            'address' => ['nullable', 'string', 'max:255'],
+            'about' => ['nullable', 'string'],
+            'avatar' => ['nullable', 'string', 'max:500'],
+            'profile_banner' => ['nullable', 'string', 'max:500'],
+            'opening_hours' => ['nullable', 'string', 'max:120'],
+            'facebook_url' => ['nullable', 'string', 'max:500'],
+            'instagram_url' => ['nullable', 'string', 'max:500'],
+            'website_url' => ['nullable', 'string', 'max:500'],
+            'google_map_url' => ['nullable', 'string', 'max:500'],
         ]);
 
         if (array_key_exists('organization_name', $data)) {
@@ -308,6 +391,20 @@ class AdminController extends Controller
             'success' => true,
             'organization' => $this->formatOrganization($user),
         ]);
+    }
+
+    public function uploadOrganizationImage(Request $request)
+    {
+        $request->validate([
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file('image')->store('uploads/organizations', 'public');
+
+        return response()->json([
+            'success' => true,
+            'imageUrl' => '/storage/' . $path,
+        ], 201);
     }
 
     public function stats()
@@ -3490,6 +3587,7 @@ class AdminController extends Controller
     {
         return [
             'id' => $user->id,
+            'parent_org_id' => $user->parent_org_id,
             'username' => $user->username,
             'email' => $user->email,
             'organization_name' => $user->organization_name,
@@ -3498,6 +3596,10 @@ class AdminController extends Controller
             'businessType' => $user->business_type,
             'phone' => $user->phone,
             'address' => $user->address,
+            'about' => $user->about,
+            'avatar' => $user->avatar,
+            'profile_banner' => $user->profile_banner,
+            'opening_hours' => $user->opening_hours,
             'facebook_url' => $user->facebook_url,
             'facebookUrl' => $user->facebook_url,
             'instagram_url' => $user->instagram_url,
