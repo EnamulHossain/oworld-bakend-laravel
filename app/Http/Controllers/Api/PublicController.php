@@ -513,7 +513,7 @@ class PublicController extends Controller
         $user = Auth::guard('sanctum')->user();
         $event = Event::query()
             ->with(['organization:id,organization_name', 'category:id,name'])
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'expired'])
             ->find($id);
 
         if (!$event) {
@@ -524,6 +524,7 @@ class PublicController extends Controller
             'success' => true,
             'event' => [
                 'id' => $event->id,
+                'status' => $event->status,
                 'name' => $event->name,
                 'description' => $event->description,
                 'banner' => $event->banner ?? [],
@@ -1108,7 +1109,7 @@ class PublicController extends Controller
         $user = Auth::guard('sanctum')->user();
         $offer = Offer::query()
             ->with(['organization:id,organization_name', 'category:id,name', 'area:id,name'])
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'expired'])
             ->find($id);
 
         if (!$offer) {
@@ -1122,6 +1123,7 @@ class PublicController extends Controller
             'success' => true,
             'offer' => [
                 'id' => $offer->id,
+                'status' => $offer->status,
                 'name' => $offer->name,
                 'details' => $offer->details,
                 'start_date' => $offer->start_date,
