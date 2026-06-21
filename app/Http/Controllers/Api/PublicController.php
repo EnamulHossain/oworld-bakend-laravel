@@ -361,6 +361,7 @@ class PublicController extends Controller
             ->with([
                 'organization:id,organization_name',
                 'category:id,name',
+                'area:id,name',
             ])
             ->whereIn('status', ['published', 'expired'])
             ->orderByRaw("CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'published' THEN 0 ELSE 1 END")
@@ -392,6 +393,7 @@ class PublicController extends Controller
             'google_map_url',
             'organization_id',
             'category_id',
+            'area_id',
             'status',
             'sort_order',
         ])->map(function ($event) {
@@ -417,12 +419,17 @@ class PublicController extends Controller
                 'image' => $event->thumbnail ?: (is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner),
                 'organizationName' => $event->organization?->organization_name,
                 'category_id' => $event->category_id,
+                'area_id' => $event->area_id,
                 'attributes' => $event->attributes ?? [],
                 'sort_order' => $event->sort_order ?? 0,
                 'serial' => $event->sort_order ?? 0,
                 'category' => $event->category ? [
                     'id' => $event->category->id,
                     'name' => $event->category->name,
+                ] : null,
+                'area' => $event->area ? [
+                    'id' => $event->area->id,
+                    'name' => $event->area->name,
                 ] : null,
             ];
         });
