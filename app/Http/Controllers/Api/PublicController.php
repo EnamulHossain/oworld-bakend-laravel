@@ -1207,9 +1207,18 @@ class PublicController extends Controller
             ->get()
             ->map(fn ($offer) => $this->formatOrganizationOffer($offer));
 
+        $branches = User::query()
+            ->where('role', 'organization')
+            ->where('parent_org_id', $record->id)
+            ->orderBy('organization_name')
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($branch) => $this->formatPublicOrganization($branch));
+
         return response()->json([
             'success' => true,
             'organization' => $this->formatPublicOrganization($record),
+            'branches' => $branches,
             'offers' => $offers,
             'posts' => [],
             'reviews' => [],
@@ -1343,6 +1352,7 @@ class PublicController extends Controller
     {
         return [
             'id' => $organization->id,
+            'parent_org_id' => $organization->parent_org_id,
             'username' => $organization->username,
             'organization_name' => $organization->organization_name,
             'organizationName' => $organization->organization_name,

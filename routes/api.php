@@ -131,6 +131,9 @@ Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')
     Route::get('stats', [OrganizationController::class, 'stats']);
     Route::get('profile', [OrganizationController::class, 'profile']);
     Route::put('profile', [OrganizationController::class, 'updateProfile']);
+    Route::post('profile/upload-image', [OrganizationController::class, 'uploadProfileImage']);
+    Route::put('branches', [OrganizationController::class, 'syncBranches']);
+    Route::delete('branches/{branch}', [OrganizationController::class, 'removeBranch']);
     Route::get('categories', [OrganizationController::class, 'categories']);
     Route::get('attributes', [OrganizationController::class, 'attributes']);
 

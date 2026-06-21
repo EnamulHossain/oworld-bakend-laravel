@@ -7,11 +7,15 @@ use App\Models\Category;
 use App\Models\Event;
 use App\Models\Offer;
 use App\Models\Attribute;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 use Throwable;
 
 class OrganizationController extends Controller
@@ -42,10 +46,13 @@ class OrganizationController extends Controller
     public function profile(Request $request)
     {
         $user = $request->user();
+        $branches = $this->organizationBranches($user)->get()->map(fn (User $branch) => $this->formatOrganizationProfile($branch));
 
         return response()->json([
             'success' => true,
             'profile' => $this->formatOrganizationProfile($user),
+            'branches' => $branches,
+            'branch_candidates' => $this->branchCandidates($user)->get()->map(fn (User $store) => $this->formatOrganizationProfile($store)),
         ]);
     }
 
@@ -74,10 +81,85 @@ class OrganizationController extends Controller
         ]);
     }
 
+    public function uploadProfileImage(Request $request)
+    {
+        $request->validate([
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file('image')->store('uploads/organizations', 'public');
+
+        return response()->json([
+            'success' => true,
+            'imageUrl' => '/storage/' . $path,
+        ], 201);
+    }
+
+    public function syncBranches(Request $request)
+    {
+        $parent = $request->user();
+        if ($parent->parent_org_id !== null) {
+            return response()->json(['error' => 'Only parent stores can manage branches.'], 422);
+        }
+
+        $data = $request->validate([
+            'branch_ids' => ['array'],
+            'branch_ids.*' => ['integer'],
+        ]);
+
+        $branchIds = collect($data['branch_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== (int) $parent->id)
+            ->unique()
+            ->values();
+
+        $validBranchIds = $this->branchCandidates($parent)
+            ->whereIn('id', $branchIds)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id);
+
+        if ($validBranchIds->count() !== $branchIds->count()) {
+            return response()->json(['error' => 'One or more selected stores cannot be linked as branches.'], 422);
+        }
+
+        User::query()
+            ->where('role', 'organization')
+            ->where('parent_org_id', $parent->id)
+            ->whereNotIn('id', $validBranchIds)
+            ->update(['parent_org_id' => null]);
+
+        User::query()
+            ->where('role', 'organization')
+            ->whereIn('id', $validBranchIds)
+            ->update(['parent_org_id' => $parent->id]);
+
+        $branches = $this->organizationBranches($parent)->get()->map(fn (User $branch) => $this->formatOrganizationProfile($branch));
+
+        return response()->json([
+            'success' => true,
+            'branches' => $branches,
+            'branch_candidates' => $this->branchCandidates($parent)->get()->map(fn (User $store) => $this->formatOrganizationProfile($store)),
+        ]);
+    }
+
+    public function removeBranch(Request $request, User $branch)
+    {
+        $parent = $request->user();
+        if ($branch->role !== 'organization' || (int) $branch->parent_org_id !== (int) $parent->id) {
+            return response()->json(['error' => 'Branch not found.'], 404);
+        }
+
+        $branch->parent_org_id = null;
+        $branch->save();
+
+        return response()->json(['success' => true]);
+    }
+
     private function formatOrganizationProfile($user): array
     {
         return [
             'id' => $user->id,
+            'parent_org_id' => $user->parent_org_id,
             'username' => $user->username,
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
@@ -96,6 +178,28 @@ class OrganizationController extends Controller
             'rating_average' => (float) ($user->rating_average ?? 0),
             'review_count' => (int) ($user->review_count ?? 0),
         ];
+    }
+
+    private function organizationBranches(User $user)
+    {
+        return User::query()
+            ->where('role', 'organization')
+            ->where('parent_org_id', $user->id)
+            ->orderBy('organization_name')
+            ->orderBy('id');
+    }
+
+    private function branchCandidates(User $user)
+    {
+        return User::query()
+            ->where('role', 'organization')
+            ->whereKeyNot($user->id)
+            ->where(function ($query) use ($user) {
+                $query->whereNull('parent_org_id')
+                    ->orWhere('parent_org_id', $user->id);
+            })
+            ->orderBy('organization_name')
+            ->orderBy('id');
     }
 
     public function categories()

@@ -191,10 +191,7 @@ class AdminController extends Controller
         $query = User::query()
             ->where('role', 'organization')
             ->when($request->boolean('top_level'), function ($q) {
-                $q->where(function ($inner) {
-                    $inner->whereNull('parent_org_id')
-                        ->orWhere('parent_org_id', 0);
-                });
+                $q->whereNull('parent_org_id');
             })
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
