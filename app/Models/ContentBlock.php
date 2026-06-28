@@ -11,6 +11,13 @@ class ContentBlock extends BaseModel
     protected $fillable = [
         'name',
         'description',
+        'status',
+        'start_date',
+        'start_time',
+        'end_date',
+        'end_time',
+        'expiration_date',
+        'expiration_time',
         'is_active',
         'is_featured',
         'teared_block',
@@ -23,6 +30,9 @@ class ContentBlock extends BaseModel
 
     protected $casts = [
         'is_active' => 'boolean',
+        'start_date' => 'date',
+        'end_date' => 'date',
+        'expiration_date' => 'date',
         'is_featured' => 'boolean',
         'teared_block' => 'boolean',
         'featured_sort_order' => 'integer',

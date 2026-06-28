@@ -15,6 +15,7 @@ return [
         'https://oworld.ibrahimaaraf.com',
         'https://owbacktest.ibrahimaaraf.com',
         'https://oworldbackend.ibrahimaaraf.com',
+        'https://backend.oworldbd.com',
     ]))),
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],

@@ -17,6 +17,7 @@ use App\Models\Offer;
 use App\Models\Attribute;
 use App\Models\User;
 use App\Models\SystemSetting;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
@@ -361,11 +362,12 @@ class PublicController extends Controller
             ->with([
                 'organization:id,organization_name',
                 'category:id,name',
+                'area:id,name',
             ])
             ->whereIn('status', ['published', 'expired'])
             ->orderByRaw("CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'published' THEN 0 ELSE 1 END")
-            ->orderBy('sort_order')
-            ->orderBy('starting_date')
+            ->orderByDesc('sort_order')
+            ->orderByDesc('starting_date')
             ->orderByDesc('created_at');
 
         if ($categoryId) {
@@ -392,6 +394,7 @@ class PublicController extends Controller
             'google_map_url',
             'organization_id',
             'category_id',
+            'area_id',
             'status',
             'sort_order',
         ])->map(function ($event) {
@@ -417,12 +420,17 @@ class PublicController extends Controller
                 'image' => $event->thumbnail ?: (is_array($event->banner) ? ($event->banner[0] ?? null) : $event->banner),
                 'organizationName' => $event->organization?->organization_name,
                 'category_id' => $event->category_id,
+                'area_id' => $event->area_id,
                 'attributes' => $event->attributes ?? [],
                 'sort_order' => $event->sort_order ?? 0,
                 'serial' => $event->sort_order ?? 0,
                 'category' => $event->category ? [
                     'id' => $event->category->id,
                     'name' => $event->category->name,
+                ] : null,
+                'area' => $event->area ? [
+                    'id' => $event->area->id,
+                    'name' => $event->area->name,
                 ] : null,
             ];
         });
@@ -513,7 +521,7 @@ class PublicController extends Controller
         $user = Auth::guard('sanctum')->user();
         $event = Event::query()
             ->with(['organization:id,organization_name', 'category:id,name'])
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'expired'])
             ->find($id);
 
         if (!$event) {
@@ -524,6 +532,7 @@ class PublicController extends Controller
             'success' => true,
             'event' => [
                 'id' => $event->id,
+                'status' => $event->status,
                 'name' => $event->name,
                 'description' => $event->description,
                 'banner' => $event->banner ?? [],
@@ -576,8 +585,8 @@ class PublicController extends Controller
             ->when($offerType === 'regular', fn ($q) => $q->whereRaw("LOWER(TRIM(COALESCE(offer_type, ''))) <> 'exclusive'"))
             ->orderByRaw("CASE WHEN LOWER(TRIM(COALESCE(offer_type, ''))) = 'exclusive' THEN 0 ELSE 1 END")
             ->orderByRaw("CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'published' THEN 0 ELSE 1 END")
-            ->orderBy('sort_order')
-            ->orderBy('start_date')
+            ->orderByDesc('sort_order')
+            ->orderByDesc('start_date')
             ->orderByDesc('created_at');
 
         $total = (clone $query)->count();
@@ -682,10 +691,12 @@ class PublicController extends Controller
     public function contentBlocks()
     {
         $this->syncOfferAndEventLifecycle();
+        $this->syncContentBlockLifecycle();
 
         $blocks = ContentBlock::query()
             ->with(['items' => fn ($q) => $q->orderBy('sort_order')->orderBy('id')])
             ->where('is_active', true)
+            ->where('status', 'published')
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
@@ -702,14 +713,19 @@ class PublicController extends Controller
             ->pluck('target_id')
             ->unique()
             ->values();
-        $offerStatuses = $offerIds->isNotEmpty()
-            ? Offer::whereIn('id', $offerIds)->pluck('status', 'id')
+        $offersById = $offerIds->isNotEmpty()
+            ? Offer::whereIn('id', $offerIds)->get([
+                'id', 'status', 'start_date', 'start_time', 'end_date', 'end_time', 'expiration_date', 'expiration_time',
+            ])->keyBy('id')
             : collect();
-        $eventStatuses = $eventIds->isNotEmpty()
-            ? Event::whereIn('id', $eventIds)->pluck('status', 'id')
+        $eventsById = $eventIds->isNotEmpty()
+            ? Event::whereIn('id', $eventIds)->get([
+                'id', 'status', 'starting_date', 'start_time', 'end_date', 'end_time', 'expiration_date', 'expiration_time',
+            ])->keyBy('id')
             : collect();
 
-        $formatted = $blocks->map(function (ContentBlock $block) use ($offerStatuses, $eventStatuses) {
+        $now = now('Asia/Dhaka');
+        $formatted = $blocks->map(function (ContentBlock $block) use ($offersById, $eventsById, $now) {
             return [
                 'id' => $block->id,
                 'name' => $block->name,
@@ -718,14 +734,52 @@ class PublicController extends Controller
                 'teared_block' => (bool) $block->teared_block,
                 'thumbnail_image' => $block->thumbnail_image,
                 'featured_sort_order' => $block->featured_sort_order,
-                'items' => $block->items->map(function ($item) use ($offerStatuses, $eventStatuses) {
+                'items' => $block->items
+                    ->filter(function ($item) use ($offersById, $eventsById, $now) {
+                        if ($item->type === 'offer') {
+                            return in_array($offersById->get($item->target_id)?->status, ['published', 'active'], true);
+                        }
+                        if ($item->type === 'event') {
+                            return in_array($eventsById->get($item->target_id)?->status, ['published', 'active'], true);
+                        }
+                        if ($item->type !== 'custom') {
+                            return true;
+                        }
+
+                        if ($item->start_date) {
+                            $startsAt = Carbon::parse(
+                                $item->start_date->format('Y-m-d') . ' ' . ($item->start_time ?: '00:00:00'),
+                                'Asia/Dhaka'
+                            );
+                            if ($startsAt->isAfter($now)) {
+                                return false;
+                            }
+                        }
+
+                        if ($item->end_date) {
+                            $endsAt = Carbon::parse(
+                                $item->end_date->format('Y-m-d') . ' ' . ($item->end_time ?: '23:59:59'),
+                                'Asia/Dhaka'
+                            );
+                            if ($endsAt->isBefore($now)) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    })
+                    ->map(function ($item) use ($offersById, $eventsById) {
                     $targetStatus = null;
+                    $source = null;
+                    $startDateField = 'start_date';
                     if ($item->type === 'offer' && $item->target_id) {
-                        $targetStatus = $offerStatuses->get($item->target_id);
+                        $source = $offersById->get($item->target_id);
                     }
                     if ($item->type === 'event' && $item->target_id) {
-                        $targetStatus = $eventStatuses->get($item->target_id);
+                        $source = $eventsById->get($item->target_id);
+                        $startDateField = 'starting_date';
                     }
+                    $targetStatus = $source?->status;
 
                     return [
                         'id' => $item->id,
@@ -738,6 +792,12 @@ class PublicController extends Controller
                         'subtitle' => $item->subtitle,
                         'image' => $item->image,
                         'external_link' => $item->external_link,
+                        'start_date' => $source?->{$startDateField}?->format('Y-m-d') ?? $item->start_date?->format('Y-m-d'),
+                        'start_time' => $source?->start_time ?? $item->start_time,
+                        'end_date' => $source?->end_date?->format('Y-m-d') ?? $item->end_date?->format('Y-m-d'),
+                        'end_time' => $source?->end_time ?? $item->end_time,
+                        'expiration_date' => $source?->expiration_date?->format('Y-m-d') ?? $item->expiration_date?->format('Y-m-d'),
+                        'expiration_time' => $source?->expiration_time ?? $item->expiration_time,
                         'sort_order' => $item->sort_order,
                     ];
                 })->values(),
@@ -1068,7 +1128,7 @@ class PublicController extends Controller
                 'category:id,name',
                 'area:id,name',
             ])
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'expired'])
             ->find($id);
 
         if (!$offer) {
@@ -1082,6 +1142,7 @@ class PublicController extends Controller
             'success' => true,
             'offer' => [
                 'id' => $offer->id,
+                'status' => $offer->status,
                 'name' => $offer->name,
                 'details' => $offer->details,
                 'start_date' => $offer->start_date,
@@ -1589,6 +1650,12 @@ class PublicController extends Controller
             'campaign_id' => $coupon->id,
             'campaign_name' => $coupon->name,
             'image' => $coupon->image,
+            'modal_image' => $coupon->modal_image,
+            'modal_title' => $coupon->modal_title,
+            'modal_main_text' => $coupon->modal_main_text,
+            'modal_sub_text' => $coupon->modal_sub_text,
+            'modal_placeholder_text' => $coupon->modal_placeholder_text,
+            'modal_success_message' => $coupon->modal_success_message,
             'campaign_type' => $coupon->campaign_type,
             'code' => $detail->coupon,
             'offer_id' => $detail->offer_id,
@@ -1682,6 +1749,12 @@ class PublicController extends Controller
                     'campaign_name' => $coupon->name,
                     'image' => $coupon->image,
                     'description' => $coupon->description,
+                    'modal_image' => $coupon->modal_image,
+                    'modal_title' => $coupon->modal_title,
+                    'modal_main_text' => $coupon->modal_main_text,
+                    'modal_sub_text' => $coupon->modal_sub_text,
+                    'modal_placeholder_text' => $coupon->modal_placeholder_text,
+                    'modal_success_message' => $coupon->modal_success_message,
                     'campaign_type' => $coupon->campaign_type,
                     'organization_name' => $coupon->organization?->organization_name ?: $coupon->organization?->username,
                     'status' => $coupon->status,
@@ -1781,6 +1854,29 @@ class PublicController extends Controller
                     'updated_at' => now(),
                 ]);
         }
+    }
+
+    private function syncContentBlockLifecycle(): void
+    {
+        $now = now('Asia/Dhaka')->toDateTimeString();
+
+        ContentBlock::query()
+            ->where('status', 'scheduled')
+            ->whereNotNull('start_date')
+            ->whereRaw("timestamp(start_date, coalesce(start_time, '00:00:00')) <= ?", [$now])
+            ->update(['status' => 'published', 'is_active' => true, 'updated_at' => now()]);
+
+        ContentBlock::query()
+            ->where('status', 'published')
+            ->whereNotNull('end_date')
+            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+            ->update(['status' => 'expired', 'is_active' => false, 'updated_at' => now()]);
+
+        ContentBlock::query()
+            ->where('status', 'expired')
+            ->whereNotNull('expiration_date')
+            ->whereRaw("timestamp(expiration_date, coalesce(expiration_time, '23:59:59')) < ?", [$now])
+            ->update(['status' => 'archived', 'is_active' => false, 'updated_at' => now()]);
     }
 
     private function couponNow()

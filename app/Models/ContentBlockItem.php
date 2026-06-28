@@ -16,11 +16,20 @@ class ContentBlockItem extends BaseModel
         'subtitle',
         'image',
         'external_link',
+        'start_date',
+        'start_time',
+        'end_date',
+        'end_time',
+        'expiration_date',
+        'expiration_time',
         'sort_order',
     ];
 
     protected $casts = [
         'target_id' => 'integer',
+        'start_date' => 'date',
+        'end_date' => 'date',
+        'expiration_date' => 'date',
         'sort_order' => 'integer',
     ];
 

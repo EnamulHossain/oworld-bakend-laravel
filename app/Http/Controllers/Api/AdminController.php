@@ -996,7 +996,7 @@ class AdminController extends Controller
 
         $excludedStatuses = $request->boolean('coupon_targets')
             ? ['canceled', 'archived']
-            : ['draft', 'scheduled', 'canceled', 'archived'];
+            : [];
 
         $query = Event::query()
             ->with([
@@ -1008,7 +1008,10 @@ class AdminController extends Controller
             ->when($request->query('status'), fn ($q, $status) => $q->whereRaw('LOWER(TRIM(status)) = ?', [strtolower(trim($status))]))
             ->when($request->query('status_group') === 'published', fn ($q) => $q->whereRaw("LOWER(TRIM(status)) IN ('published', 'active')"))
             ->when($request->query('status_group') === 'other', fn ($q) => $q->whereRaw("LOWER(TRIM(status)) NOT IN ('published', 'active')"))
-            ->whereRaw("LOWER(TRIM(status)) NOT IN ('" . implode("','", $excludedStatuses) . "')")
+            ->when(
+                count($excludedStatuses) > 0,
+                fn ($q) => $q->whereRaw("LOWER(TRIM(status)) NOT IN ('" . implode("','", $excludedStatuses) . "')")
+            )
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
@@ -1266,7 +1269,7 @@ class AdminController extends Controller
     {
         $this->syncOfferAndEventLifecycle();
 
-        $excludedStatuses = ['draft', 'scheduled', 'canceled', 'archived'];
+        $excludedStatuses = [];
 
         $query = Offer::query()
             ->with([
@@ -1278,7 +1281,7 @@ class AdminController extends Controller
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('status_group') === 'published', fn ($q) => $q->whereIn('status', ['published', 'active']))
             ->when($request->query('status_group') === 'other', fn ($q) => $q->whereNotIn('status', ['published', 'active']))
-            ->whereNotIn('status', $excludedStatuses)
+            ->when(count($excludedStatuses) > 0, fn ($q) => $q->whereNotIn('status', $excludedStatuses))
             ->when($request->query('category_id'), fn ($q, $categoryId) => $q->where('category_id', $categoryId))
             ->when($request->query('offer_type'), fn ($q, $offerType) => $q->where('offer_type', $offerType))
             ->when($request->query('search'), function ($q, $term) {
@@ -1781,6 +1784,12 @@ class AdminController extends Controller
             ],
             'image' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string', 'max:2000'],
+            'modal_image' => ['nullable', 'string', 'max:500'],
+            'modal_title' => ['nullable', 'string', 'max:255'],
+            'modal_main_text' => ['nullable', 'string', 'max:2000'],
+            'modal_sub_text' => ['nullable', 'string', 'max:2000'],
+            'modal_placeholder_text' => ['nullable', 'string', 'max:255'],
+            'modal_success_message' => ['nullable', 'string', 'max:2000'],
             'campaign_type' => ['nullable', Rule::in(['standard'])],
             'offer_id' => ['nullable', 'exists:offers,id'],
             'event_id' => ['nullable', 'exists:events,id'],
@@ -1813,6 +1822,12 @@ class AdminController extends Controller
             'name' => trim((string) $data['coupon_name']),
             'image' => trim((string) ($data['image'] ?? '')) ?: null,
             'description' => trim((string) ($data['description'] ?? '')) ?: null,
+            'modal_image' => trim((string) ($data['modal_image'] ?? '')) ?: null,
+            'modal_title' => trim((string) ($data['modal_title'] ?? '')) ?: null,
+            'modal_main_text' => trim((string) ($data['modal_main_text'] ?? '')) ?: null,
+            'modal_sub_text' => trim((string) ($data['modal_sub_text'] ?? '')) ?: null,
+            'modal_placeholder_text' => trim((string) ($data['modal_placeholder_text'] ?? '')) ?: null,
+            'modal_success_message' => trim((string) ($data['modal_success_message'] ?? '')) ?: null,
             'campaign_type' => 'standard',
             'organization_id' => $organizationId,
             'status' => $data['status'] ?? ($coupon?->status ?? 'draft'),
@@ -2119,6 +2134,121 @@ class AdminController extends Controller
     private function offerEventStatuses(): array
     {
         return ['draft', 'published', 'scheduled', 'expired', 'archived', 'canceled'];
+    }
+
+    private function contentBlockStatuses(): array
+    {
+        return ['draft', 'published', 'scheduled', 'expired', 'archived'];
+    }
+
+    private function normalizeContentBlockLifecycleFields(array $data, ?ContentBlock $contentBlock = null): array
+    {
+        $data = $this->normalizeDateAndTimeFields($data, 'start_date');
+
+        $endDateWasProvided = array_key_exists('end_date', $data);
+        $endTimeWasProvided = array_key_exists('end_time', $data);
+
+        if ($endDateWasProvided && empty($data['expiration_date'])) {
+            $data['expiration_date'] = $data['end_date'];
+        }
+        if ($endTimeWasProvided && empty($data['expiration_time'])) {
+            $data['expiration_time'] = $data['end_time'];
+        }
+
+        $data = $this->normalizeExpirationFields($data, $contentBlock);
+
+        if (!array_key_exists('status', $data) && array_key_exists('is_active', $data)) {
+            $data['status'] = $data['is_active'] ? 'published' : 'draft';
+        }
+
+        $status = $data['status'] ?? $contentBlock?->status ?? 'published';
+        $startDate = $data['start_date'] ?? $contentBlock?->start_date?->format('Y-m-d');
+        $endDate = $data['end_date'] ?? $contentBlock?->end_date?->format('Y-m-d');
+        $expirationDate = $data['expiration_date'] ?? $contentBlock?->expiration_date?->format('Y-m-d');
+
+        if ($status === 'scheduled' && !$startDate) {
+            throw ValidationException::withMessages([
+                'start_date' => 'Start date is required for scheduled content blocks.',
+            ]);
+        }
+
+        if ($expirationDate && !$endDate) {
+            throw ValidationException::withMessages([
+                'end_date' => 'End date is required when an expiration date is set.',
+            ]);
+        }
+
+        $data['is_active'] = $status === 'published';
+
+        return $data;
+    }
+
+    private function normalizeContentBlockItemLifecycleFields(array $item): array
+    {
+        $type = $item['type'] ?? 'custom';
+        $targetId = $item['target_id'] ?? null;
+
+        if ($type === 'offer' && $targetId) {
+            $offer = Offer::find($targetId);
+            return $this->applyContentBlockItemSourceLifecycle($item, $offer, 'start_date');
+        }
+
+        if ($type === 'event' && $targetId) {
+            $event = Event::find($targetId);
+            return $this->applyContentBlockItemSourceLifecycle($item, $event, 'starting_date');
+        }
+
+        if ($type !== 'custom') {
+            return $this->applyContentBlockItemSourceLifecycle($item);
+        }
+
+        $item = $this->normalizeDateAndTimeFields($item, 'start_date');
+        if (!empty($item['end_date']) && empty($item['expiration_date'])) {
+            $item['expiration_date'] = $item['end_date'];
+        }
+        if (!empty($item['end_time']) && empty($item['expiration_time'])) {
+            $item['expiration_time'] = $item['end_time'];
+        }
+
+        return $this->normalizeExpirationFields($item);
+    }
+
+    private function applyContentBlockItemSourceLifecycle(array $item, $source = null, string $startDateField = 'start_date'): array
+    {
+        $item['start_date'] = $source?->{$startDateField}?->format('Y-m-d');
+        $item['start_time'] = $source?->start_time;
+        $item['end_date'] = $source?->end_date?->format('Y-m-d');
+        $item['end_time'] = $source?->end_time;
+        $item['expiration_date'] = $source?->expiration_date?->format('Y-m-d');
+        $item['expiration_time'] = $source?->expiration_time;
+
+        return $item;
+    }
+
+    private function syncContentBlockLifecycle(?array $ids = null): void
+    {
+        $now = now('Asia/Dhaka')->toDateTimeString();
+
+        ContentBlock::query()
+            ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+            ->where('status', 'scheduled')
+            ->whereNotNull('start_date')
+            ->whereRaw("timestamp(start_date, coalesce(start_time, '00:00:00')) <= ?", [$now])
+            ->update(['status' => 'published', 'is_active' => true, 'updated_at' => now()]);
+
+        ContentBlock::query()
+            ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+            ->where('status', 'published')
+            ->whereNotNull('end_date')
+            ->whereRaw("timestamp(end_date, coalesce(end_time, '23:59:59')) < ?", [$now])
+            ->update(['status' => 'expired', 'is_active' => false, 'updated_at' => now()]);
+
+        ContentBlock::query()
+            ->when($ids, fn ($query) => $query->whereIn('id', $ids))
+            ->where('status', 'expired')
+            ->whereNotNull('expiration_date')
+            ->whereRaw("timestamp(expiration_date, coalesce(expiration_time, '23:59:59')) < ?", [$now])
+            ->update(['status' => 'archived', 'is_active' => false, 'updated_at' => now()]);
     }
 
     private function syncOfferAndEventLifecycle(?string $modelClass = null, ?array $ids = null): void
@@ -2533,6 +2663,8 @@ class AdminController extends Controller
 
     public function listContentBlocks()
     {
+        $this->syncContentBlockLifecycle();
+
         $blocks = ContentBlock::query()
             ->withCount('items')
             ->orderBy('sort_order')
@@ -2547,6 +2679,8 @@ class AdminController extends Controller
 
     public function showContentBlock(ContentBlock $contentBlock)
     {
+        $this->syncContentBlockLifecycle([$contentBlock->id]);
+        $contentBlock->refresh();
         $contentBlock->load('items');
 
         return response()->json([
@@ -2560,6 +2694,13 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', Rule::in($this->contentBlockStatuses())],
+            'start_date' => ['nullable', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+            'expiration_time' => ['nullable', 'date_format:H:i'],
             'is_active' => ['nullable', 'boolean'],
             'is_featured' => ['nullable', 'boolean'],
             'teared_block' => ['nullable', 'boolean'],
@@ -2567,6 +2708,8 @@ class AdminController extends Controller
             'featured_sort_order' => ['nullable', 'integer'],
             'sort_order' => ['nullable', 'integer'],
         ]);
+
+        $data = $this->normalizeContentBlockLifecycleFields($data);
 
         if (!empty($data['is_featured'])) {
             if (empty($data['featured_sort_order'])) {
@@ -2603,6 +2746,9 @@ class AdminController extends Controller
             ]);
         });
 
+        $this->syncContentBlockLifecycle([$block->id]);
+        $block->refresh();
+
         return response()->json(['success' => true, 'block' => $block], 201);
     }
 
@@ -2611,6 +2757,13 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', Rule::in($this->contentBlockStatuses())],
+            'start_date' => ['nullable', 'date'],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'end_time' => ['nullable', 'date_format:H:i'],
+            'expiration_date' => ['nullable', 'date', 'after_or_equal:end_date'],
+            'expiration_time' => ['nullable', 'date_format:H:i'],
             'is_active' => ['nullable', 'boolean'],
             'is_featured' => ['nullable', 'boolean'],
             'teared_block' => ['nullable', 'boolean'],
@@ -2618,6 +2771,8 @@ class AdminController extends Controller
             'featured_sort_order' => ['nullable', 'integer'],
             'sort_order' => ['nullable', 'integer'],
         ]);
+
+        $data = $this->normalizeContentBlockLifecycleFields($data, $contentBlock);
 
         if (array_key_exists('is_featured', $data) && $data['is_featured'] && !$contentBlock->is_featured) {
             if (empty($data['featured_sort_order'])) {
@@ -2672,6 +2827,9 @@ class AdminController extends Controller
             return $contentBlock;
         });
 
+        $this->syncContentBlockLifecycle([$contentBlock->id]);
+        $contentBlock->refresh();
+
         return response()->json(['success' => true, 'block' => $contentBlock]);
     }
 
@@ -2685,10 +2843,18 @@ class AdminController extends Controller
             'items.*.subtitle' => ['nullable', 'string', 'max:255'],
             'items.*.image' => ['nullable', 'string', 'max:500'],
             'items.*.external_link' => ['nullable', 'string', 'max:500'],
+            'items.*.start_date' => ['nullable', 'date'],
+            'items.*.start_time' => ['nullable', 'date_format:H:i'],
+            'items.*.end_date' => ['nullable', 'date', 'after_or_equal:items.*.start_date'],
+            'items.*.end_time' => ['nullable', 'date_format:H:i'],
+            'items.*.expiration_date' => ['nullable', 'date', 'after_or_equal:items.*.end_date'],
+            'items.*.expiration_time' => ['nullable', 'date_format:H:i'],
             'items.*.sort_order' => ['nullable', 'integer'],
         ]);
 
-        $items = $data['items'] ?? [];
+        $items = collect($data['items'] ?? [])
+            ->map(fn (array $item) => $this->normalizeContentBlockItemLifecycleFields($item))
+            ->all();
 
         DB::transaction(function () use ($contentBlock, $items) {
             $contentBlock->items()->delete();
@@ -2706,6 +2872,12 @@ class AdminController extends Controller
                     'subtitle' => $item['subtitle'] ?? null,
                     'image' => $item['image'] ?? null,
                     'external_link' => $item['external_link'] ?? null,
+                    'start_date' => $item['start_date'] ?? null,
+                    'start_time' => $item['start_time'] ?? null,
+                    'end_date' => $item['end_date'] ?? null,
+                    'end_time' => $item['end_time'] ?? null,
+                    'expiration_date' => $item['expiration_date'] ?? null,
+                    'expiration_time' => $item['expiration_time'] ?? null,
                     'sort_order' => $item['sort_order'] ?? $index,
                 ];
             }

@@ -28,7 +28,7 @@ class UserProfileController extends Controller
 
         $items = CouponDetail::query()
             ->with([
-                'couponMaster:id,name,image,description,campaign_type,organization_id,status,start_date,start_time,end_date,end_time,usage_limit_per_user',
+                'couponMaster:id,name,image,description,modal_image,modal_title,modal_main_text,modal_sub_text,modal_placeholder_text,modal_success_message,campaign_type,organization_id,status,start_date,start_time,end_date,end_time,usage_limit_per_user',
                 'couponMaster.organization:id,organization_name,username',
                 'tier:id,coupon_id,label,discount_type,discount_value,max_discount_amount,min_order_amount,referral_required_count',
             ])
@@ -50,6 +50,12 @@ class UserProfileController extends Controller
                     'campaign_name' => $coupon?->name,
                     'image' => $coupon?->image,
                     'description' => $coupon?->description,
+                    'modal_image' => $coupon?->modal_image,
+                    'modal_title' => $coupon?->modal_title,
+                    'modal_main_text' => $coupon?->modal_main_text,
+                    'modal_sub_text' => $coupon?->modal_sub_text,
+                    'modal_placeholder_text' => $coupon?->modal_placeholder_text,
+                    'modal_success_message' => $coupon?->modal_success_message,
                     'campaign_type' => $coupon?->campaign_type,
                     'code' => $detail->coupon,
                     'offer_id' => $detail->offer_id,
