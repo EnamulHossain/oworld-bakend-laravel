@@ -117,9 +117,9 @@ class AuthController extends Controller
 
         if (!$user) {
             return response()->json([
-                'message' => 'Please enter a valid email address.',
+                'message' => 'Please enter a valid username, email address, or phone.',
                 'errors' => [
-                    'email' => ['Please enter a valid email address.'],
+                    'email' => ['Please enter a valid username, email address, or phone.'],
                 ],
             ], 401);
         }
@@ -152,15 +152,19 @@ class AuthController extends Controller
 
     private function findUserForLogin(string $identifier): ?User
     {
-        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
-            return User::where('email', $identifier)->first();
-        }
-
         $normalizedPhone = preg_replace('/[\s\-\(\)]/', '', $identifier);
 
-        return User::where('phone', $identifier)
-            ->when($normalizedPhone !== $identifier, function ($query) use ($normalizedPhone) {
-                $query->orWhere('phone', $normalizedPhone);
+        return User::where(function ($query) use ($identifier, $normalizedPhone) {
+            if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+                $query->where('email', $identifier);
+                return;
+            }
+
+            $query->where('username', $identifier)
+                ->orWhere('phone', $identifier)
+                ->when($normalizedPhone !== $identifier, function ($query) use ($normalizedPhone) {
+                    $query->orWhere('phone', $normalizedPhone);
+                });
             })
             ->first();
     }
