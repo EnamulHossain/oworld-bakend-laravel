@@ -66,7 +66,13 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
     Route::get('organizations', [AdminController::class, 'organizations']);
     Route::post('organizations', [AdminController::class, 'storeOrganization']);
     Route::post('organizations/upload-image', [AdminController::class, 'uploadOrganizationImage']);
+    Route::get('organizations/{user}', [AdminController::class, 'showOrganization']);
     Route::put('organizations/{user}', [AdminController::class, 'updateOrganization']);
+    Route::get('organizations/{user}/posts', [AdminController::class, 'listOrganizationPosts']);
+    Route::post('organizations/{user}/posts', [AdminController::class, 'storeOrganizationPost']);
+    Route::put('organizations/{user}/posts/{post}', [AdminController::class, 'updateOrganizationPost']);
+    Route::delete('organizations/{user}/posts/{post}', [AdminController::class, 'deleteOrganizationPost']);
+    Route::post('organizations/posts/upload-media', [AdminController::class, 'uploadOrganizationPostMedia']);
     Route::get('stats', [AdminController::class, 'stats']);
     Route::get('analytics/clicks', [AdminController::class, 'analyticsClicks']);
 
@@ -136,6 +142,11 @@ Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')
     Route::delete('branches/{branch}', [OrganizationController::class, 'removeBranch']);
     Route::get('categories', [OrganizationController::class, 'categories']);
     Route::get('attributes', [OrganizationController::class, 'attributes']);
+    Route::get('posts', [OrganizationController::class, 'listPosts']);
+    Route::post('posts', [OrganizationController::class, 'storePost']);
+    Route::put('posts/{post}', [OrganizationController::class, 'updatePost']);
+    Route::delete('posts/{post}', [OrganizationController::class, 'deletePost']);
+    Route::post('posts/upload-media', [OrganizationController::class, 'uploadPostMedia']);
 
     Route::get('events', [OrganizationController::class, 'listEvents']);
     Route::post('events', [OrganizationController::class, 'storeEvent']);

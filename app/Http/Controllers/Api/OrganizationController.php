@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\Offer;
 use App\Models\Attribute;
 use App\Models\User;
+use App\Models\StorePost;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -43,6 +44,70 @@ class OrganizationController extends Controller
         ]);
     }
 
+    public function listPosts(Request $request)
+    {
+        return response()->json(['success' => true, 'posts' => StorePost::where('organization_id', $request->user()->id)
+            ->orderByDesc('is_pinned')->orderBy('pin_order')->orderByDesc('created_at')->get()]);
+    }
+
+    public function storePost(Request $request)
+    {
+        $data = $this->validatePost($request);
+        $data['organization_id'] = $request->user()->id;
+        if (!empty($data['is_pinned'])) {
+            $data['pin_order'] = ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1;
+        }
+        $post = StorePost::create($data);
+        return response()->json(['success' => true, 'post' => $post], 201);
+    }
+
+    public function updatePost(Request $request, StorePost $post)
+    {
+        abort_unless((int) $post->organization_id === (int) $request->user()->id, 404);
+        $data = $this->validatePost($request);
+        if (!empty($data['is_pinned']) && !$post->is_pinned) {
+            $data['pin_order'] = ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1;
+        } elseif (empty($data['is_pinned'])) {
+            $data['pin_order'] = null;
+        }
+        $post->update($data);
+        return response()->json(['success' => true, 'post' => $post->fresh()]);
+    }
+
+    public function deletePost(Request $request, StorePost $post)
+    {
+        abort_unless((int) $post->organization_id === (int) $request->user()->id, 404);
+        $post->delete();
+        return response()->json(['success' => true]);
+    }
+
+    private function validatePost(Request $request): array
+    {
+        return $request->validate([
+            'type' => ['required', Rule::in(['general', 'offer', 'event'])],
+            'title' => ['required', 'string', 'max:180'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'image' => ['nullable', 'string', 'max:500'],
+            'media' => ['nullable', 'array', 'max:20'],
+            'media.*.url' => ['required', 'string', 'max:500'],
+            'media.*.type' => ['required', Rule::in(['image', 'video'])],
+            'is_pinned' => ['nullable', 'boolean'],
+        ]);
+    }
+
+    public function uploadPostMedia(Request $request)
+    {
+        $request->validate([
+            'files' => ['required', 'array', 'max:20'],
+            'files.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,mp4,webm,mov,m4v,ogg', 'max:20480'],
+        ]);
+        $media = collect($request->file('files'))->map(function ($file) {
+            $path = $file->store('uploads/store-posts', 'public');
+            return ['url' => '/storage/' . $path, 'type' => str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image'];
+        })->values();
+        return response()->json(['success' => true, 'media' => $media], 201);
+    }
+
     public function profile(Request $request)
     {
         $user = $request->user();
@@ -61,16 +126,47 @@ class OrganizationController extends Controller
         $data = $request->validate([
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
+            'categories' => ['nullable', 'array'],
+            'categories.*' => ['string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'whatsapp' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'about' => ['nullable', 'string'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
             'opening_hours' => ['nullable', 'string', 'max:120'],
+            'business_hours' => ['nullable', 'array'],
+            'business_hours.*.day' => ['required', 'string', 'max:12'],
+            'business_hours.*.open' => ['nullable', 'date_format:H:i'],
+            'business_hours.*.close' => ['nullable', 'date_format:H:i'],
+            'business_hours.*.closed' => ['required', 'boolean'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
             'instagram_url' => ['nullable', 'string', 'max:500'],
             'website_url' => ['nullable', 'string', 'max:500'],
             'google_map_url' => ['nullable', 'string', 'max:500'],
+            'payment_methods' => ['nullable', 'array'],
+            'payment_methods.*' => ['string', 'max:100'],
+            'facilities' => ['nullable', 'array'],
+            'facilities.*' => ['string', 'max:100'],
+            'highlights' => ['nullable', 'array'],
+            'highlights.*' => ['string', 'max:100'],
+            'catalog_sections' => ['nullable', 'array'],
+            'catalog_sections.*.title' => ['required', 'string', 'max:150'],
+            'catalog_sections.*.type' => ['required', 'in:Menu,Products,Services'],
+            'catalog_sections.*.items' => ['nullable', 'array'],
+            'catalog_sections.*.items.*.name' => ['required', 'string', 'max:150'],
+            'catalog_sections.*.items.*.image' => ['nullable', 'string', 'max:500'],
+            'catalog_sections.*.items.*.description' => ['nullable', 'string', 'max:500'],
+            'catalog_sections.*.items.*.price' => ['nullable', 'string', 'max:60'],
+            'catalog_sections.*.items.*.category' => ['nullable', 'string', 'max:100'],
+            'catalog_items' => ['nullable', 'array'],
+            'catalog_items.*.type' => ['required', Rule::in(['Menu', 'Product', 'Service'])],
+            'catalog_items.*.name' => ['required', 'string', 'max:150'],
+            'catalog_items.*.description' => ['nullable', 'string', 'max:500'],
+            'catalog_items.*.price' => ['nullable', 'string', 'max:60'],
+            'catalog_items.*.media' => ['nullable', 'array', 'max:20'],
+            'catalog_items.*.media.*.url' => ['required', 'string', 'max:500'],
+            'catalog_items.*.media.*.type' => ['required', Rule::in(['image', 'video'])],
         ]);
 
         $request->user()->update($data);
@@ -164,12 +260,22 @@ class OrganizationController extends Controller
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
+            'is_verified' => (bool) $user->is_verified,
+            'categories' => $user->categories ?? [],
             'phone' => $user->phone,
+            'whatsapp' => $user->whatsapp,
+            'email' => $user->email,
             'address' => $user->address,
             'about' => $user->about,
             'avatar' => $user->avatar,
             'profile_banner' => $user->profile_banner,
             'opening_hours' => $user->opening_hours,
+            'business_hours' => $user->business_hours ?? [],
+            'payment_methods' => $user->payment_methods ?? [],
+            'facilities' => $user->facilities ?? [],
+            'highlights' => $user->highlights ?? [],
+            'catalog_sections' => $user->catalog_sections ?? [],
+            'catalog_items' => $user->catalog_items ?? [],
             'facebook_url' => $user->facebook_url,
             'instagram_url' => $user->instagram_url,
             'website_url' => $user->website_url,

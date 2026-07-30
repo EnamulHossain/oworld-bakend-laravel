@@ -17,6 +17,7 @@ use App\Models\HighlightReelItem;
 use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Models\StorePost;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -218,16 +219,25 @@ class AdminController extends Controller
                 'email',
                 'organization_name',
                 'business_type',
+                'is_verified',
+                'categories',
                 'phone',
+                'whatsapp',
                 'address',
                 'about',
                 'avatar',
                 'profile_banner',
                 'opening_hours',
+                'business_hours',
                 'facebook_url',
                 'instagram_url',
                 'website_url',
                 'google_map_url',
+                'payment_methods',
+                'facilities',
+                'highlights',
+                'catalog_sections',
+                'catalog_items',
                 'created_at',
         ];
 
@@ -265,7 +275,10 @@ class AdminController extends Controller
             'email' => ['nullable', 'email', 'unique:users,email'],
             'password' => ['nullable', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
+            'is_verified' => ['nullable', 'boolean'],
+            'categories' => ['nullable', 'array'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'whatsapp' => ['nullable', 'string', 'max:30'],
             'parent_org_id' => [
                 'nullable',
                 'integer',
@@ -278,10 +291,16 @@ class AdminController extends Controller
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
             'opening_hours' => ['nullable', 'string', 'max:120'],
+            'business_hours' => ['nullable', 'array'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
             'instagram_url' => ['nullable', 'string', 'max:500'],
             'website_url' => ['nullable', 'string', 'max:500'],
             'google_map_url' => ['nullable', 'string', 'max:500'],
+            'payment_methods' => ['nullable', 'array'],
+            'facilities' => ['nullable', 'array'],
+            'highlights' => ['nullable', 'array'],
+            'catalog_sections' => ['nullable', 'array'],
+            'catalog_items' => ['nullable', 'array'],
         ]);
 
         $organizationName = trim($data['organization_name']);
@@ -311,15 +330,24 @@ class AdminController extends Controller
             'parent_org_id' => $data['parent_org_id'] ?? null,
             'organization_name' => $organizationName,
             'business_type' => $data['business_type'] ?? null,
+            'is_verified' => $data['is_verified'] ?? false,
+            'categories' => $data['categories'] ?? [],
             'phone' => $data['phone'] ?? null,
+            'whatsapp' => $data['whatsapp'] ?? null,
             'address' => $data['address'] ?? null,
             'avatar' => $data['avatar'] ?? null,
             'profile_banner' => $data['profile_banner'] ?? null,
             'opening_hours' => $data['opening_hours'] ?? null,
+            'business_hours' => $data['business_hours'] ?? [],
             'facebook_url' => $data['facebook_url'] ?? null,
             'instagram_url' => $data['instagram_url'] ?? null,
             'website_url' => $data['website_url'] ?? null,
             'google_map_url' => $data['google_map_url'] ?? null,
+            'payment_methods' => $data['payment_methods'] ?? [],
+            'facilities' => $data['facilities'] ?? [],
+            'highlights' => $data['highlights'] ?? [],
+            'catalog_sections' => $data['catalog_sections'] ?? [],
+            'catalog_items' => $data['catalog_items'] ?? [],
             'full_name' => null,
             'dob' => null,
             'about' => $data['about'] ?? null,
@@ -335,6 +363,16 @@ class AdminController extends Controller
         ], 201);
     }
 
+    public function showOrganization(User $user)
+    {
+        $this->ensureOrganization($user);
+
+        return response()->json([
+            'success' => true,
+            'organization' => $this->formatOrganization($user->fresh()),
+        ]);
+    }
+
     public function updateOrganization(Request $request, User $user)
     {
         if ($user->role !== 'organization') {
@@ -347,7 +385,10 @@ class AdminController extends Controller
             'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
+            'is_verified' => ['nullable', 'boolean'],
+            'categories' => ['nullable', 'array'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'whatsapp' => ['nullable', 'string', 'max:30'],
             'parent_org_id' => [
                 'nullable',
                 'integer',
@@ -361,10 +402,16 @@ class AdminController extends Controller
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
             'opening_hours' => ['nullable', 'string', 'max:120'],
+            'business_hours' => ['nullable', 'array'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
             'instagram_url' => ['nullable', 'string', 'max:500'],
             'website_url' => ['nullable', 'string', 'max:500'],
             'google_map_url' => ['nullable', 'string', 'max:500'],
+            'payment_methods' => ['nullable', 'array'],
+            'facilities' => ['nullable', 'array'],
+            'highlights' => ['nullable', 'array'],
+            'catalog_sections' => ['nullable', 'array'],
+            'catalog_items' => ['nullable', 'array'],
         ]);
 
         if (array_key_exists('organization_name', $data)) {
@@ -402,6 +449,79 @@ class AdminController extends Controller
             'success' => true,
             'imageUrl' => '/storage/' . $path,
         ], 201);
+    }
+
+    public function listOrganizationPosts(User $user)
+    {
+        $this->ensureOrganization($user);
+        return response()->json(['success' => true, 'posts' => StorePost::where('organization_id', $user->id)
+            ->orderByDesc('is_pinned')->orderBy('pin_order')->orderByDesc('created_at')->get()]);
+    }
+
+    public function storeOrganizationPost(Request $request, User $user)
+    {
+        $this->ensureOrganization($user);
+        $data = $this->validateOrganizationPost($request);
+        $data['organization_id'] = $user->id;
+        if (!empty($data['is_pinned'])) {
+            $data['pin_order'] = ((int) StorePost::where('organization_id', $user->id)->where('is_pinned', true)->max('pin_order')) + 1;
+        }
+        $post = StorePost::create($data);
+        return response()->json(['success' => true, 'post' => $post], 201);
+    }
+
+    public function updateOrganizationPost(Request $request, User $user, StorePost $post)
+    {
+        $this->ensureOrganization($user);
+        abort_unless((int) $post->organization_id === (int) $user->id, 404);
+        $data = $this->validateOrganizationPost($request);
+        if (!empty($data['is_pinned']) && !$post->is_pinned) {
+            $data['pin_order'] = ((int) StorePost::where('organization_id', $user->id)->where('is_pinned', true)->max('pin_order')) + 1;
+        } elseif (empty($data['is_pinned'])) {
+            $data['pin_order'] = null;
+        }
+        $post->update($data);
+        return response()->json(['success' => true, 'post' => $post->fresh()]);
+    }
+
+    public function deleteOrganizationPost(User $user, StorePost $post)
+    {
+        $this->ensureOrganization($user);
+        abort_unless((int) $post->organization_id === (int) $user->id, 404);
+        $post->delete();
+        return response()->json(['success' => true]);
+    }
+
+    private function validateOrganizationPost(Request $request): array
+    {
+        return $request->validate([
+            'type' => ['required', Rule::in(['general', 'offer', 'event'])],
+            'title' => ['required', 'string', 'max:180'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'image' => ['nullable', 'string', 'max:500'],
+            'media' => ['nullable', 'array', 'max:20'],
+            'media.*.url' => ['required', 'string', 'max:500'],
+            'media.*.type' => ['required', Rule::in(['image', 'video'])],
+            'is_pinned' => ['nullable', 'boolean'],
+        ]);
+    }
+
+    public function uploadOrganizationPostMedia(Request $request)
+    {
+        $request->validate([
+            'files' => ['required', 'array', 'max:20'],
+            'files.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,mp4,webm,mov,m4v,ogg', 'max:20480'],
+        ]);
+        $media = collect($request->file('files'))->map(function ($file) {
+            $path = $file->store('uploads/store-posts', 'public');
+            return ['url' => '/storage/' . $path, 'type' => str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image'];
+        })->values();
+        return response()->json(['success' => true, 'media' => $media], 201);
+    }
+
+    private function ensureOrganization(User $user): void
+    {
+        abort_unless($user->role === 'organization', 404);
     }
 
     public function stats()
@@ -3762,13 +3882,22 @@ class AdminController extends Controller
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
+            'is_verified' => (bool) $user->is_verified,
+            'categories' => $user->categories ?? [],
             'businessType' => $user->business_type,
             'phone' => $user->phone,
+            'whatsapp' => $user->whatsapp,
             'address' => $user->address,
             'about' => $user->about,
             'avatar' => $user->avatar,
             'profile_banner' => $user->profile_banner,
             'opening_hours' => $user->opening_hours,
+            'business_hours' => $user->business_hours ?? [],
+            'payment_methods' => $user->payment_methods ?? [],
+            'facilities' => $user->facilities ?? [],
+            'highlights' => $user->highlights ?? [],
+            'catalog_sections' => $user->catalog_sections ?? [],
+            'catalog_items' => $user->catalog_items ?? [],
             'facebook_url' => $user->facebook_url,
             'facebookUrl' => $user->facebook_url,
             'instagram_url' => $user->instagram_url,

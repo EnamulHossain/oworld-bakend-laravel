@@ -16,6 +16,7 @@ use App\Models\HighlightReelShare;
 use App\Models\Offer;
 use App\Models\Attribute;
 use App\Models\User;
+use App\Models\StorePost;
 use App\Models\SystemSetting;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
@@ -1268,6 +1269,49 @@ class PublicController extends Controller
             ->get()
             ->map(fn ($offer) => $this->formatOrganizationOffer($offer));
 
+        $events = Event::query()
+            ->where('organization_id', $record->id)
+            ->whereIn('status', ['published', 'active'])
+            ->orderByDesc('starting_date')
+            ->limit(50)
+            ->get()
+            ->map(function (Event $event) {
+                $images = is_array($event->banner) ? $event->banner : [];
+                $media = collect($images)->filter()->map(fn ($url) => ['url' => $url, 'type' => 'image']);
+
+                if ($event->thumbnail && !$media->contains('url', $event->thumbnail)) {
+                    $media->prepend(['url' => $event->thumbnail, 'type' => 'image']);
+                }
+
+                return [
+                    'id' => $event->id,
+                    'title' => $event->name,
+                    'name' => $event->name,
+                    'description' => $event->description,
+                    'image' => $event->thumbnail ?: ($images[0] ?? null),
+                    'media' => $media->values(),
+                    'starting_date' => $event->starting_date,
+                ];
+            });
+
+        $posts = StorePost::query()
+            ->where('organization_id', $record->id)
+            ->orderByDesc('is_pinned')
+            ->orderBy('pin_order')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (StorePost $post) => [
+                'id' => $post->id,
+                'post_type' => $post->type,
+                'title' => $post->title,
+                'description' => $post->description,
+                'image' => $post->image,
+                'media' => $post->media ?? ($post->image ? [['url' => $post->image, 'type' => 'image']] : []),
+                'is_pinned' => $post->is_pinned,
+                'pin_order' => $post->pin_order,
+                'created_at' => $post->created_at,
+            ]);
+
         $branches = User::query()
             ->where('role', 'organization')
             ->where('parent_org_id', $record->id)
@@ -1281,7 +1325,8 @@ class PublicController extends Controller
             'organization' => $this->formatPublicOrganization($record),
             'branches' => $branches,
             'offers' => $offers,
-            'posts' => [],
+            'events' => $events,
+            'posts' => $posts,
             'reviews' => [],
         ]);
     }
@@ -1418,12 +1463,22 @@ class PublicController extends Controller
             'organization_name' => $organization->organization_name,
             'organizationName' => $organization->organization_name,
             'business_type' => $organization->business_type,
+            'is_verified' => (bool) $organization->is_verified,
+            'categories' => $organization->categories ?? [],
             'about' => $organization->about,
             'phone' => $organization->phone,
+            'whatsapp' => $organization->whatsapp,
+            'email' => $organization->email,
             'address' => $organization->address,
             'avatar' => $organization->avatar,
             'profile_banner' => $organization->profile_banner,
             'opening_hours' => $organization->opening_hours,
+            'business_hours' => $organization->business_hours ?? [],
+            'payment_methods' => $organization->payment_methods ?? [],
+            'facilities' => $organization->facilities ?? [],
+            'highlights' => $organization->highlights ?? [],
+            'catalog_sections' => $organization->catalog_sections ?? [],
+            'catalog_items' => $organization->catalog_items ?? [],
             'facebook_url' => $organization->facebook_url,
             'instagram_url' => $organization->instagram_url,
             'website_url' => $organization->website_url,
@@ -1437,6 +1492,19 @@ class PublicController extends Controller
     private function formatOrganizationOffer(Offer $offer): array
     {
         $images = is_array($offer->images) ? $offer->images : [];
+        $videos = is_array($offer->videos) ? $offer->videos : [];
+        $media = collect($images)->filter()->map(fn ($url) => ['url' => $url, 'type' => 'image']);
+
+        foreach ([$offer->thumbnail, $offer->cover] as $image) {
+            if ($image && !$media->contains('url', $image)) {
+                $media->prepend(['url' => $image, 'type' => 'image']);
+            }
+        }
+        foreach ($videos as $video) {
+            if ($video) {
+                $media->push(['url' => $video, 'type' => 'video']);
+            }
+        }
 
         return [
             'id' => $offer->id,
@@ -1449,6 +1517,7 @@ class PublicController extends Controller
             'thumbnail' => $offer->thumbnail,
             'cover' => $offer->cover,
             'image' => $offer->thumbnail ?: ($offer->cover ?: ($images[0] ?? null)),
+            'media' => $media->values(),
             'category' => $offer->category ? [
                 'id' => $offer->category->id,
                 'name' => $offer->category->name,
