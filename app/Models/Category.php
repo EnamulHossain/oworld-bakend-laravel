@@ -18,6 +18,7 @@ class Category extends BaseModel
         'order',
         'status',
         'description',
+        'parent_id',
         'created_by',
     ];
 
@@ -30,6 +31,16 @@ class Category extends BaseModel
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function parent()
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    public function children()
+    {
+        return $this->hasMany(self::class, 'parent_id')->orderBy('order')->orderBy('name');
     }
 
     public function events()

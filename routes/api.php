@@ -20,6 +20,7 @@ Route::prefix('auth')->group(function () {
 
 Route::get('public/categories', [PublicController::class, 'categories']);
 Route::get('public/categories/{id}', [PublicController::class, 'categoryDetail']);
+Route::get('public/facilities', [PublicController::class, 'facilities']);
 Route::get('public/areas', [PublicController::class, 'areas']);
 Route::get('public/events', [PublicController::class, 'events']);
 Route::get('public/events/highlights', [PublicController::class, 'eventHighlights']);
@@ -78,9 +79,17 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
 
     Route::get('categories', [AdminController::class, 'listCategories']);
     Route::post('categories', [AdminController::class, 'storeCategory']);
+    Route::put('categories/reorder', [AdminController::class, 'reorderCategories']);
     Route::put('categories/{category}', [AdminController::class, 'updateCategory']);
     Route::delete('categories/{category}', [AdminController::class, 'deleteCategory']);
     Route::post('categories/upload-image', [AdminController::class, 'uploadCategoryImage']);
+
+    Route::get('facilities', [AdminController::class, 'listFacilities']);
+    Route::post('facilities', [AdminController::class, 'storeFacility']);
+    Route::put('facilities/reorder', [AdminController::class, 'reorderFacilities']);
+    Route::put('facilities/{facility}', [AdminController::class, 'updateFacility']);
+    Route::delete('facilities/{facility}', [AdminController::class, 'deleteFacility']);
+    Route::post('facilities/upload-image', [AdminController::class, 'uploadFacilityImage']);
 
     Route::get('areas', [AdminController::class, 'listAreas']);
     Route::post('areas', [AdminController::class, 'storeArea']);

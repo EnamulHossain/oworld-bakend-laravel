@@ -99,7 +99,7 @@ class OrganizationController extends Controller
     {
         $request->validate([
             'files' => ['required', 'array', 'max:20'],
-            'files.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,mp4,webm,mov,m4v,ogg', 'max:20480'],
+            'files.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,avif,mp4,webm,mov', 'max:20480'],
         ]);
         $media = collect($request->file('files'))->map(function ($file) {
             $path = $file->store('uploads/store-posts', 'public');
@@ -164,6 +164,8 @@ class OrganizationController extends Controller
             'catalog_items.*.name' => ['required', 'string', 'max:150'],
             'catalog_items.*.description' => ['nullable', 'string', 'max:500'],
             'catalog_items.*.price' => ['nullable', 'string', 'max:60'],
+            'catalog_items.*.category' => ['nullable', 'string', 'max:100'],
+            'catalog_items.*.is_pinned' => ['nullable', 'boolean'],
             'catalog_items.*.media' => ['nullable', 'array', 'max:20'],
             'catalog_items.*.media.*.url' => ['required', 'string', 'max:500'],
             'catalog_items.*.media.*.type' => ['required', Rule::in(['image', 'video'])],

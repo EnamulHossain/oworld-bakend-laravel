@@ -12,6 +12,7 @@ use App\Models\Coupon;
 use App\Models\CouponDetail;
 use App\Models\CouponTier;
 use App\Models\Event;
+use App\Models\Facility;
 use App\Models\HighlightReel;
 use App\Models\HighlightReelItem;
 use App\Models\Offer;
@@ -510,7 +511,7 @@ class AdminController extends Controller
     {
         $request->validate([
             'files' => ['required', 'array', 'max:20'],
-            'files.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,mp4,webm,mov,m4v,ogg', 'max:20480'],
+            'files.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,avif,mp4,webm,mov', 'max:20480'],
         ]);
         $media = collect($request->file('files'))->map(function ($file) {
             $path = $file->store('uploads/store-posts', 'public');
@@ -962,17 +963,25 @@ class AdminController extends Controller
 
     public function listCategories(Request $request)
     {
-        $categories = Category::query()
+        $query = Category::query()
+            ->with('parent:id,name')
+            ->when($request->query('hierarchy') === 'subcategories', fn ($q) => $q->whereNotNull('parent_id'))
+            ->when(!$request->has('hierarchy'), fn ($q) => $q->whereNull('parent_id'))
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
                         ->orWhere('description', 'like', "%{$term}%");
                 });
-            })
-            ->orderBy('order')
-            ->orderBy('name')
-            ->get();
+            });
+
+        if ($request->query('hierarchy') === 'subcategories') {
+            $query->orderBy('parent_id')->orderByDesc('order')->orderBy('name');
+        } else {
+            $query->orderBy('order')->orderBy('name');
+        }
+
+        $categories = $query->get();
 
         return response()->json(['success' => true, 'categories' => $categories]);
     }
@@ -1049,6 +1058,7 @@ class AdminController extends Controller
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'description' => ['nullable', 'string'],
+            'parent_id' => ['nullable', 'integer', 'exists:categories,id'],
         ]);
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
@@ -1065,6 +1075,28 @@ class AdminController extends Controller
         return response()->json(['success' => true, 'category' => $category], 201);
     }
 
+    public function reorderCategories(Request $request)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'size:2'],
+            'items.*.id' => ['required', 'integer', 'distinct', 'exists:categories,id'],
+            'items.*.order' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $categories = Category::whereIn('id', collect($data['items'])->pluck('id')->all())->get();
+        if ($categories->count() !== 2 || $categories->pluck('parent_id')->unique()->count() !== 1 || $categories->first()->parent_id === null) {
+            return response()->json(['error' => 'Only subcategories in the same parent category can be swapped.'], 422);
+        }
+
+        DB::transaction(function () use ($data) {
+            foreach ($data['items'] as $item) {
+                Category::whereKey($item['id'])->update(['order' => (int) $item['order']]);
+            }
+        });
+
+        return response()->json(['success' => true, 'items' => $data['items']]);
+    }
+
     public function updateCategory(Request $request, Category $category)
     {
         $data = $request->validate([
@@ -1077,6 +1109,7 @@ class AdminController extends Controller
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'description' => ['nullable', 'string'],
+            'parent_id' => ['nullable', 'integer', 'exists:categories,id', Rule::notIn([$category->id])],
         ]);
 
         if (array_key_exists('banner', $data)) {
@@ -1104,6 +1137,78 @@ class AdminController extends Controller
         ]);
 
         $path = $request->file('image')->store('uploads/categories', 'public');
+        return response()->json([
+            'success' => true,
+            'imageUrl' => '/storage/' . $path,
+        ], 201);
+    }
+
+    public function listFacilities()
+    {
+        return response()->json([
+            'success' => true,
+            'facilities' => Facility::orderByDesc('order')->orderBy('name')->get(),
+        ]);
+    }
+
+    public function storeFacility(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'image' => ['required', 'string', 'max:500'],
+            'order' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $facility = Facility::create($data + ['created_by' => $request->user()->id]);
+
+        return response()->json(['success' => true, 'facility' => $facility], 201);
+    }
+
+    public function updateFacility(Request $request, Facility $facility)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'image' => ['required', 'string', 'max:500'],
+            'order' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $facility->update($data);
+
+        return response()->json(['success' => true, 'facility' => $facility]);
+    }
+
+    public function reorderFacilities(Request $request)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'size:2'],
+            'items.*.id' => ['required', 'integer', 'distinct', 'exists:facilities,id'],
+            'items.*.order' => ['required', 'integer', 'min:0'],
+        ]);
+
+        DB::transaction(function () use ($data) {
+            foreach ($data['items'] as $item) {
+                Facility::whereKey($item['id'])->update(['order' => (int) $item['order']]);
+            }
+        });
+
+        return response()->json(['success' => true, 'items' => $data['items']]);
+    }
+
+    public function deleteFacility(Facility $facility)
+    {
+        $facility->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    public function uploadFacilityImage(Request $request)
+    {
+        $request->validate([
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file('image')->store('uploads/facilities', 'public');
+
         return response()->json([
             'success' => true,
             'imageUrl' => '/storage/' . $path,

@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('store_posts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained('users')->cascadeOnDelete();
-            $table->enum('type', ['update', 'announcement', 'offer', 'event', 'new_arrival', 'promotion'])->default('update');
+            $table->enum('type', ['general', 'update', 'announcement', 'offer', 'event', 'new_arrival', 'promotion'])->default('general');
             $table->string('title', 180);
             $table->text('description')->nullable();
             $table->string('image', 500)->nullable();

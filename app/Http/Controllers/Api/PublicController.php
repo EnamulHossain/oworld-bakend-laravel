@@ -10,6 +10,7 @@ use App\Models\ContentBlock;
 use App\Models\Coupon;
 use App\Models\CouponDetail;
 use App\Models\Event;
+use App\Models\Facility;
 use App\Models\HighlightReel;
 use App\Models\HighlightReelReaction;
 use App\Models\HighlightReelShare;
@@ -26,6 +27,14 @@ use Illuminate\Support\Facades\DB;
 
 class PublicController extends Controller
 {
+    public function facilities()
+    {
+        return response()->json([
+            'success' => true,
+            'facilities' => Facility::orderByDesc('order')->orderBy('name')->get(['id', 'name', 'image', 'order']),
+        ]);
+    }
+
     public function validateCoupon(Request $request)
     {
         $data = $request->validate([
@@ -192,6 +201,7 @@ class PublicController extends Controller
     {
         $categories = Category::query()
             ->where('status', 'active')
+            ->whereNull('parent_id')
             ->orderBy('order')
             ->orderBy('name')
             ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order']);
