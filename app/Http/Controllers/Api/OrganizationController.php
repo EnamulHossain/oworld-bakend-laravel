@@ -9,10 +9,15 @@ use App\Models\Offer;
 use App\Models\Attribute;
 use App\Models\User;
 use App\Models\StorePost;
+use App\Models\Organization;
+use App\Models\OrganizationDocument;
+use App\Models\OrganizationVerification;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -23,6 +28,79 @@ class OrganizationController extends Controller
 {
     private const MEDIA_UPLOAD_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'webm', 'mov', 'm4v', 'ogg', 'avi', 'mkv'];
     private const MEDIA_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
+    public function submitVerification(Request $request)
+    {
+        abort_unless($request->user()?->role === 'organization', 403, 'Only organization accounts can submit verification.');
+
+        $data = $request->validate([
+            'owner_full_name' => ['required', 'string', 'max:120'],
+            'owner_phone' => ['required', 'string', 'max:30'],
+            'owner_email' => ['required', 'email', 'max:255'],
+            'nid_no' => ['required', 'string', 'max:50'],
+            'trade_license_no' => ['required', 'string', 'max:100'],
+            'trade_license_valid_until' => ['required', 'date'],
+            'organization_valid_until' => ['nullable', 'date'],
+            'nid_front' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'nid_back' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'trade_license' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+        ]);
+
+        $organization = Organization::where('user_id', $request->user()->id)->firstOrFail();
+        $storedPaths = [];
+
+        try {
+            foreach (['nid_front', 'nid_back', 'trade_license'] as $type) {
+                $storedPaths[$type] = $request->file($type)->store(
+                    "organization-documents/{$organization->id}",
+                    'local'
+                );
+            }
+
+            DB::transaction(function () use ($data, $request, $organization, $storedPaths) {
+                $verification = OrganizationVerification::updateOrCreate(
+                    ['organization_id' => $organization->id],
+                    [
+                        'owner_full_name' => trim($data['owner_full_name']),
+                        'owner_phone' => trim($data['owner_phone']),
+                        'owner_email' => trim($data['owner_email']),
+                        'nid_no' => trim($data['nid_no']),
+                        'trade_license_no' => trim($data['trade_license_no']),
+                        'trade_license_valid_until' => $data['trade_license_valid_until'],
+                        'organization_valid_until' => $data['organization_valid_until'] ?? now()->addYears(100)->toDateString(),
+                        'status' => 'pending',
+                        'reviewed_by' => null,
+                        'reviewed_at' => null,
+                        'rejection_reason' => null,
+                    ]
+                );
+
+                foreach ($storedPaths as $type => $path) {
+                    $file = $request->file($type);
+                    OrganizationDocument::updateOrCreate(
+                        ['organization_id' => $organization->id, 'document_type' => $type],
+                        [
+                            'verification_id' => $verification->id,
+                            'disk' => 'local',
+                            'file_path' => $path,
+                            'original_name' => $file->getClientOriginalName(),
+                            'mime_type' => $file->getMimeType(),
+                            'file_size' => $file->getSize(),
+                            'ocr_status' => 'not_started',
+                            'ocr_data' => null,
+                        ]
+                    );
+                }
+
+                $organization->update(['verification_status' => 'pending', 'is_verified' => false]);
+            });
+        } catch (Throwable $exception) {
+            foreach ($storedPaths as $path) Storage::disk('local')->delete($path);
+            throw $exception;
+        }
+
+        return response()->json(['success' => true, 'message' => 'Verification documents submitted for administrator review.']);
+    }
 
     public function stats(Request $request)
     {
@@ -85,6 +163,7 @@ class OrganizationController extends Controller
     {
         return $request->validate([
             'type' => ['required', Rule::in(['general', 'offer', 'event'])],
+            'source_id' => ['nullable', 'integer'],
             'title' => ['required', 'string', 'max:180'],
             'description' => ['nullable', 'string', 'max:5000'],
             'image' => ['nullable', 'string', 'max:500'],
@@ -128,12 +207,16 @@ class OrganizationController extends Controller
             'business_type' => ['nullable', 'string', 'max:100'],
             'categories' => ['nullable', 'array'],
             'categories.*' => ['string', 'max:100'],
+            'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
             'phone' => ['nullable', 'string', 'max:30'],
             'whatsapp' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'about' => ['nullable', 'string'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
+            'interior_media' => ['nullable', 'array', 'max:20'],
+            'interior_media.*.url' => ['required', 'string', 'max:500'],
+            'interior_media.*.type' => ['required', Rule::in(['image', 'video'])],
             'opening_hours' => ['nullable', 'string', 'max:120'],
             'business_hours' => ['nullable', 'array'],
             'business_hours.*.day' => ['required', 'string', 'max:12'],
@@ -165,11 +248,26 @@ class OrganizationController extends Controller
             'catalog_items.*.description' => ['nullable', 'string', 'max:500'],
             'catalog_items.*.price' => ['nullable', 'string', 'max:60'],
             'catalog_items.*.category' => ['nullable', 'string', 'max:100'],
+            'catalog_items.*.section_name' => ['nullable', 'string', 'max:150'],
+            'catalog_items.*.order_no' => ['nullable', 'integer', 'min:1'],
             'catalog_items.*.is_pinned' => ['nullable', 'boolean'],
             'catalog_items.*.media' => ['nullable', 'array', 'max:20'],
             'catalog_items.*.media.*.url' => ['required', 'string', 'max:500'],
             'catalog_items.*.media.*.type' => ['required', Rule::in(['image', 'video'])],
         ]);
+
+        if (!empty($data['subcategory_id'])) {
+            $categoryName = trim((string) ($data['categories'][0] ?? ''));
+            $valid = $categoryName !== '' && Category::query()
+                ->whereKey($data['subcategory_id'])
+                ->whereHas('parent', fn ($query) => $query->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($categoryName)]))
+                ->exists();
+            if (!$valid) {
+                throw ValidationException::withMessages([
+                    'subcategory_id' => ['Select a valid subcategory for the selected category.'],
+                ]);
+            }
+        }
 
         $request->user()->update($data);
 
@@ -264,6 +362,7 @@ class OrganizationController extends Controller
             'business_type' => $user->business_type,
             'is_verified' => (bool) $user->is_verified,
             'categories' => $user->categories ?? [],
+            'subcategory_id' => $user->subcategory_id,
             'phone' => $user->phone,
             'whatsapp' => $user->whatsapp,
             'email' => $user->email,
@@ -271,6 +370,7 @@ class OrganizationController extends Controller
             'about' => $user->about,
             'avatar' => $user->avatar,
             'profile_banner' => $user->profile_banner,
+            'interior_media' => $user->interior_media ?? [],
             'opening_hours' => $user->opening_hours,
             'business_hours' => $user->business_hours ?? [],
             'payment_methods' => $user->payment_methods ?? [],

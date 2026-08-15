@@ -200,6 +200,9 @@ class PublicController extends Controller
     public function categories()
     {
         $categories = Category::query()
+            ->with(['children' => fn ($query) => $query
+                ->where('status', 'active')
+                ->select(['id', 'parent_id', 'name', 'short_name', 'image', 'icon', 'order'])])
             ->where('status', 'active')
             ->whereNull('parent_id')
             ->orderBy('order')
@@ -532,7 +535,7 @@ class PublicController extends Controller
         $user = Auth::guard('sanctum')->user();
         $event = Event::query()
             ->with(['organization:id,organization_name', 'category:id,name'])
-            ->whereIn('status', ['published', 'expired'])
+            ->whereIn('status', ['published', 'active', 'expired', 'archived'])
             ->find($id);
 
         if (!$event) {
@@ -1139,7 +1142,7 @@ class PublicController extends Controller
                 'category:id,name',
                 'area:id,name',
             ])
-            ->whereIn('status', ['published', 'expired'])
+            ->whereIn('status', ['published', 'active', 'expired', 'archived'])
             ->find($id);
 
         if (!$offer) {
@@ -1306,21 +1309,34 @@ class PublicController extends Controller
 
         $posts = StorePost::query()
             ->where('organization_id', $record->id)
+            ->withCount(['likes', 'comments'])
             ->orderByDesc('is_pinned')
             ->orderBy('pin_order')
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (StorePost $post) => [
-                'id' => $post->id,
-                'post_type' => $post->type,
-                'title' => $post->title,
-                'description' => $post->description,
-                'image' => $post->image,
-                'media' => $post->media ?? ($post->image ? [['url' => $post->image, 'type' => 'image']] : []),
-                'is_pinned' => $post->is_pinned,
-                'pin_order' => $post->pin_order,
-                'created_at' => $post->created_at,
-            ]);
+            ->map(function (StorePost $post) use ($record) {
+                $sourceId = $post->source_id;
+                if (!$sourceId && $post->type === 'event') {
+                    $sourceId = Event::where('organization_id', $record->id)->where('name', $post->title)->value('id');
+                } elseif (!$sourceId && $post->type === 'offer') {
+                    $sourceId = Offer::where('organization_id', $record->id)->where('name', $post->title)->value('id');
+                }
+
+                return [
+                    'id' => $post->id,
+                    'post_type' => $post->type,
+                    'source_id' => $sourceId,
+                    'title' => $post->title,
+                    'description' => $post->description,
+                    'image' => $post->image,
+                    'media' => $post->media ?? ($post->image ? [['url' => $post->image, 'type' => 'image']] : []),
+                    'is_pinned' => $post->is_pinned,
+                    'pin_order' => $post->pin_order,
+                    'created_at' => $post->created_at,
+                    'likes_count' => $post->likes_count,
+                    'comments_count' => $post->comments_count,
+                ];
+            });
 
         $branches = User::query()
             ->where('role', 'organization')
@@ -1482,6 +1498,7 @@ class PublicController extends Controller
             'address' => $organization->address,
             'avatar' => $organization->avatar,
             'profile_banner' => $organization->profile_banner,
+            'interior_media' => $organization->interior_media ?? [],
             'opening_hours' => $organization->opening_hours,
             'business_hours' => $organization->business_hours ?? [],
             'payment_methods' => $organization->payment_methods ?? [],

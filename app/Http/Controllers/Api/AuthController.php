@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\FormatsUser;
 use App\Http\Controllers\Controller;
 use App\Models\Referral;
+use App\Models\Category;
+use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,39 @@ class AuthController extends Controller
 {
     use FormatsUser;
 
+    public function checkAvailability(Request $request)
+    {
+        $data = $request->validate([
+            'field' => ['required', 'in:email,phone,organization_name'],
+            'value' => ['required', 'string', 'max:255'],
+        ]);
+
+        $field = $data['field'];
+        $value = trim($data['value']);
+
+        if ($field === 'phone') {
+            $digits = preg_replace('/\D+/', '', $value);
+            $localPhone = str_starts_with($digits, '880') ? '0' . substr($digits, 3) : $digits;
+            $internationalPhone = '+880' . ltrim($localPhone, '0');
+            $exists = User::whereIn('phone', [$localPhone, $internationalPhone])->exists();
+            $message = 'This mobile number is already registered.';
+        } elseif ($field === 'organization_name') {
+            $exists = User::query()
+                ->whereNotNull('organization_name')
+                ->whereRaw('LOWER(TRIM(organization_name)) = ?', [Str::lower($value)])
+                ->exists();
+            $message = 'This business name is already registered.';
+        } else {
+            $exists = User::whereRaw('LOWER(TRIM(email)) = ?', [Str::lower($value)])->exists();
+            $message = 'This email address is already registered.';
+        }
+
+        return response()->json([
+            'available' => !$exists,
+            'message' => $exists ? $message : null,
+        ]);
+    }
+
     public function register(Request $request)
     {
         $data = $request->validate([
@@ -29,8 +64,11 @@ class AuthController extends Controller
             'role' => ['nullable', 'in:user,organization,admin'],
             'referral_code' => ['nullable', 'string', 'max:32'],
             'organization_name' => ['nullable', 'string', 'max:255'],
+            'categories' => ['nullable', 'array', 'max:1'],
+            'categories.*' => ['string', 'max:100'],
             'business_type' => ['nullable', 'string', 'max:100'],
-            'phone' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
+            'phone' => ['required', 'string', 'max:16'],
+            'terms_accepted' => ['nullable', 'boolean'],
             'full_name' => ['nullable', 'string', 'max:120'],
             'first_name' => ['nullable', 'string', 'max:60'],
             'last_name' => ['nullable', 'string', 'max:60'],
@@ -49,9 +87,35 @@ class AuthController extends Controller
         if ($role === 'organization') {
             $request->validate([
                 'organization_name' => ['required', 'string', 'max:255'],
-                'business_type' => ['required', 'string', 'max:100'],
-                'phone' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
+                'categories' => ['required', 'array', 'size:1'],
+                'categories.*' => ['required', 'string', 'max:100'],
+                'phone' => ['required', 'string', 'regex:/^\+8801[3-9]\d{8}$/'],
+                'terms_accepted' => ['accepted'],
             ]);
+
+            $organizationName = trim($data['organization_name']);
+            if (User::query()
+                ->whereNotNull('organization_name')
+                ->whereRaw('LOWER(TRIM(organization_name)) = ?', [Str::lower($organizationName)])
+                ->exists()) {
+                return response()->json([
+                    'message' => 'This business name is already registered.',
+                    'errors' => ['organization_name' => ['This business name is already registered.']],
+                ], 422);
+            }
+            $data['organization_name'] = $organizationName;
+
+        } else {
+            $request->validate(['phone' => ['required', 'string', 'regex:/^\+8801[3-9]\d{8}$/']]);
+        }
+
+        $localPhone = '0' . substr($data['phone'], 4);
+        $internationalPhone = '+880' . ltrim($localPhone, '0');
+        if (User::whereIn('phone', [$localPhone, $internationalPhone])->exists()) {
+            return response()->json([
+                'message' => 'This mobile number is already registered.',
+                'errors' => ['phone' => ['This mobile number is already registered.']],
+            ], 422);
         }
 
         $referrer = $this->resolveReferrerFromCode($data['referral_code'] ?? null);
@@ -71,6 +135,7 @@ class AuthController extends Controller
                 'password' => Hash::make($data['password']),
                 'role' => $role,
                 'organization_name' => $data['organization_name'] ?? null,
+                'categories' => $data['categories'] ?? null,
                 'business_type' => $data['business_type'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'full_name' => $data['full_name'] ?? null,
@@ -88,6 +153,27 @@ class AuthController extends Controller
 
             if ($referrer) {
                 $this->recordCompletedReferral($referrer, $user, $data['referral_code']);
+            }
+
+            if ($role === 'organization') {
+                $categoryName = $data['categories'][0] ?? null;
+                $categoryId = $categoryName
+                    ? Category::whereRaw('LOWER(TRIM(name)) = ?', [Str::lower(trim($categoryName))])->value('id')
+                    : null;
+
+                Organization::updateOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'name' => trim($data['organization_name']),
+                        'business_type' => $data['business_type'] ?? null,
+                        'category_id' => $categoryId,
+                        'email' => $data['email'],
+                        'phone' => $data['phone'],
+                        'status' => 'pending_approval',
+                        'verification_status' => 'not_submitted',
+                        'is_verified' => false,
+                    ]
+                );
             }
 
             return $user;
@@ -142,12 +228,44 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken('api')->plainTextToken;
+        $requiresOrganizationVerification = $this->requiresOrganizationVerification($user);
+        $formattedUser = $this->formatUser($user);
+        $formattedUser['requires_organization_verification'] = $requiresOrganizationVerification;
 
         return response()->json([
             'message' => 'Login successful',
             'token' => $token,
-            'user' => $this->formatUser($user),
+            'user' => $formattedUser,
+            'requires_organization_verification' => $requiresOrganizationVerification,
         ]);
+    }
+
+    private function requiresOrganizationVerification(User $user): bool
+    {
+        if ($user->role !== 'organization') return false;
+
+        $organization = Organization::firstOrCreate(
+            ['user_id' => $user->id],
+            [
+                'name' => trim((string) ($user->organization_name ?: $user->username)),
+                'business_type' => $user->business_type,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'status' => 'pending_approval',
+                'verification_status' => 'not_submitted',
+                'is_verified' => false,
+            ]
+        );
+
+        $requiredDocumentTypes = ['nid_front', 'nid_back', 'trade_license'];
+        $documentCount = $organization->documents()
+            ->whereIn('document_type', $requiredDocumentTypes)
+            ->distinct()
+            ->count('document_type');
+
+        return !$organization->verification()->exists()
+            || $organization->verification()->where('status', 'rejected')->exists()
+            || $documentCount !== count($requiredDocumentTypes);
     }
 
     private function findUserForLogin(string $identifier): ?User

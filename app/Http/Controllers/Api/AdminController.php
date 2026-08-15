@@ -222,6 +222,7 @@ class AdminController extends Controller
                 'business_type',
                 'is_verified',
                 'categories',
+                'subcategory_id',
                 'phone',
                 'whatsapp',
                 'address',
@@ -278,6 +279,8 @@ class AdminController extends Controller
             'business_type' => ['nullable', 'string', 'max:100'],
             'is_verified' => ['nullable', 'boolean'],
             'categories' => ['nullable', 'array'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'phone' => ['nullable', 'string', 'max:30'],
             'whatsapp' => ['nullable', 'string', 'max:30'],
             'parent_org_id' => [
@@ -291,6 +294,9 @@ class AdminController extends Controller
             'about' => ['nullable', 'string'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
+            'interior_media' => ['nullable', 'array', 'max:20'],
+            'interior_media.*.url' => ['required', 'string', 'max:500'],
+            'interior_media.*.type' => ['required', Rule::in(['image', 'video'])],
             'opening_hours' => ['nullable', 'string', 'max:120'],
             'business_hours' => ['nullable', 'array'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
@@ -305,6 +311,7 @@ class AdminController extends Controller
         ]);
 
         $organizationName = trim($data['organization_name']);
+        $this->validateOrganizationSubcategory($data);
         if ($organizationName === '') {
             return response()->json(['error' => 'Organization name is required.'], 422);
         }
@@ -333,6 +340,8 @@ class AdminController extends Controller
             'business_type' => $data['business_type'] ?? null,
             'is_verified' => $data['is_verified'] ?? false,
             'categories' => $data['categories'] ?? [],
+            'subcategory_ids' => $data['subcategory_ids'] ?? [],
+            'subcategory_id' => $data['subcategory_ids'][0] ?? null,
             'phone' => $data['phone'] ?? null,
             'whatsapp' => $data['whatsapp'] ?? null,
             'address' => $data['address'] ?? null,
@@ -388,6 +397,8 @@ class AdminController extends Controller
             'business_type' => ['nullable', 'string', 'max:100'],
             'is_verified' => ['nullable', 'boolean'],
             'categories' => ['nullable', 'array'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'phone' => ['nullable', 'string', 'max:30'],
             'whatsapp' => ['nullable', 'string', 'max:30'],
             'parent_org_id' => [
@@ -402,6 +413,9 @@ class AdminController extends Controller
             'about' => ['nullable', 'string'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
+            'interior_media' => ['nullable', 'array', 'max:20'],
+            'interior_media.*.url' => ['required', 'string', 'max:500'],
+            'interior_media.*.type' => ['required', Rule::in(['image', 'video'])],
             'opening_hours' => ['nullable', 'string', 'max:120'],
             'business_hours' => ['nullable', 'array'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
@@ -417,6 +431,12 @@ class AdminController extends Controller
 
         if (array_key_exists('organization_name', $data)) {
             $data['organization_name'] = trim($data['organization_name']);
+        }
+
+        $this->validateOrganizationSubcategory($data);
+
+        if (array_key_exists('subcategory_ids', $data)) {
+            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
         }
 
         if (!empty($data['password'])) {
@@ -497,6 +517,7 @@ class AdminController extends Controller
     {
         return $request->validate([
             'type' => ['required', Rule::in(['general', 'offer', 'event'])],
+            'source_id' => ['nullable', 'integer'],
             'title' => ['required', 'string', 'max:180'],
             'description' => ['nullable', 'string', 'max:5000'],
             'image' => ['nullable', 'string', 'max:500'],
@@ -3989,6 +4010,8 @@ class AdminController extends Controller
             'business_type' => $user->business_type,
             'is_verified' => (bool) $user->is_verified,
             'categories' => $user->categories ?? [],
+            'subcategory_id' => $user->subcategory_id,
+            'subcategory_ids' => $user->subcategory_ids ?? ($user->subcategory_id ? [$user->subcategory_id] : []),
             'businessType' => $user->business_type,
             'phone' => $user->phone,
             'whatsapp' => $user->whatsapp,
@@ -3996,6 +4019,7 @@ class AdminController extends Controller
             'about' => $user->about,
             'avatar' => $user->avatar,
             'profile_banner' => $user->profile_banner,
+            'interior_media' => $user->interior_media ?? [],
             'opening_hours' => $user->opening_hours,
             'business_hours' => $user->business_hours ?? [],
             'payment_methods' => $user->payment_methods ?? [],
@@ -4014,5 +4038,23 @@ class AdminController extends Controller
             'created_at' => $user->created_at,
             'createdAt' => $user->created_at,
         ];
+    }
+
+    private function validateOrganizationSubcategory(array $data): void
+    {
+        if (empty($data['subcategory_ids'])) return;
+
+        $categoryName = trim((string) ($data['categories'][0] ?? ''));
+        $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids'])));
+        $valid = $categoryName !== '' && Category::query()
+            ->whereKey($subcategoryIds)
+            ->whereHas('parent', fn ($query) => $query->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($categoryName)]))
+            ->count() === count($subcategoryIds);
+
+        if (!$valid) {
+            throw ValidationException::withMessages([
+                'subcategory_ids' => ['Select valid subcategories for the selected category.'],
+            ]);
+        }
     }
 }

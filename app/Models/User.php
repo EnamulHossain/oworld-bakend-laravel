@@ -31,6 +31,8 @@ class User extends BaseAuthenticatable
         'business_type',
         'is_verified',
         'categories',
+        'subcategory_id',
+        'subcategory_ids',
         'phone',
         'whatsapp',
         'address',
@@ -47,6 +49,7 @@ class User extends BaseAuthenticatable
         'google_id',
         'avatar',
         'profile_banner',
+        'interior_media',
         'opening_hours',
         'business_hours',
         'payment_methods',
@@ -86,6 +89,7 @@ class User extends BaseAuthenticatable
             'password' => 'hashed',
             'dob' => 'date',
             'categories' => 'array',
+            'subcategory_ids' => 'array',
             'is_verified' => 'boolean',
             'business_hours' => 'array',
             'payment_methods' => 'array',
@@ -93,6 +97,7 @@ class User extends BaseAuthenticatable
             'highlights' => 'array',
             'catalog_sections' => 'array',
             'catalog_items' => 'array',
+            'interior_media' => 'array',
         ];
     }
 
@@ -129,6 +134,16 @@ class User extends BaseAuthenticatable
     public function childOrganizations()
     {
         return $this->hasMany(User::class, 'parent_org_id');
+    }
+
+    public function organization()
+    {
+        return $this->hasOne(Organization::class);
+    }
+
+    public function subcategory()
+    {
+        return $this->belongsTo(Category::class, 'subcategory_id');
     }
 
     public function wishlistItems()

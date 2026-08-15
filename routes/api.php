@@ -6,10 +6,13 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\WishlistController;
+use App\Http\Controllers\Api\StorePostInteractionController;
+use App\Http\Controllers\Api\AdminStoreOnboardingController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
+    Route::post('check-availability', [AuthController::class, 'checkAvailability'])->middleware('throttle:60,1');
     Route::post('login', [AuthController::class, 'login']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
@@ -38,6 +41,7 @@ Route::get('public/settings/{key}', [PublicController::class, 'setting']);
 Route::post('public/coupons/validate', [PublicController::class, 'validateCoupon']);
 Route::post('public/analytics/events', [PublicController::class, 'trackAnalyticsEvent'])->middleware('throttle:240,1');
 Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHighlight']);
+Route::get('public/store-posts/{post}/comments', [StorePostInteractionController::class, 'comments']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('profile', [UserProfileController::class, 'show']);
@@ -45,6 +49,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::match(['put', 'patch'], 'profile', [UserProfileController::class, 'update']);
     Route::post('profile/avatar', [UserProfileController::class, 'updateAvatar']);
     Route::post('profile/password', [UserProfileController::class, 'updatePassword']);
+    Route::post('organization/verification', [OrganizationController::class, 'submitVerification']);
 
     Route::get('wishlist', [WishlistController::class, 'index']);
     Route::post('wishlist', [WishlistController::class, 'store']);
@@ -54,9 +59,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('coupons/redeem', [PublicController::class, 'redeemCoupon']);
     Route::get('highlights/reactions', [PublicController::class, 'highlightReactions']);
     Route::post('highlights/{highlight}/react', [PublicController::class, 'reactToHighlight']);
+    Route::get('store-posts/{post}/status', [StorePostInteractionController::class, 'status']);
+    Route::post('store-posts/{post}/like', [StorePostInteractionController::class, 'toggleLike']);
+    Route::post('store-posts/{post}/comments', [StorePostInteractionController::class, 'addComment']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->group(function () {
+    Route::get('store-onboardings', [AdminStoreOnboardingController::class, 'index']);
+    Route::get('store-onboardings/{organization}', [AdminStoreOnboardingController::class, 'show']);
+    Route::get('store-onboarding-documents/{document}', [AdminStoreOnboardingController::class, 'document']);
+    Route::patch('store-onboardings/{organization}/approve', [AdminStoreOnboardingController::class, 'approve']);
+    Route::patch('store-onboardings/{organization}/reject', [AdminStoreOnboardingController::class, 'reject']);
     Route::get('users', [AdminController::class, 'users']);
     Route::patch('users/{user}/role', [AdminController::class, 'updateUserRole']);
     Route::get('admins', [AdminController::class, 'admins']);
