@@ -277,6 +277,8 @@ class AdminController extends Controller
             'email' => ['nullable', 'email', 'unique:users,email'],
             'password' => ['nullable', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
+            'public_subcategory' => ['nullable', 'string', 'max:100'],
+            'public_tag' => ['nullable', 'string', 'max:50'],
             'is_verified' => ['nullable', 'boolean'],
             'categories' => ['nullable', 'array'],
             'subcategory_ids' => ['nullable', 'array'],
@@ -338,6 +340,8 @@ class AdminController extends Controller
             'parent_org_id' => $data['parent_org_id'] ?? null,
             'organization_name' => $organizationName,
             'business_type' => $data['business_type'] ?? null,
+            'public_subcategory' => $data['public_subcategory'] ?? null,
+            'public_tag' => $data['public_tag'] ?? null,
             'is_verified' => $data['is_verified'] ?? false,
             'categories' => $data['categories'] ?? [],
             'subcategory_ids' => $data['subcategory_ids'] ?? [],
@@ -395,6 +399,8 @@ class AdminController extends Controller
             'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
+            'public_subcategory' => ['nullable', 'string', 'max:100'],
+            'public_tag' => ['nullable', 'string', 'max:50'],
             'is_verified' => ['nullable', 'boolean'],
             'categories' => ['nullable', 'array'],
             'subcategory_ids' => ['nullable', 'array'],
@@ -483,9 +489,14 @@ class AdminController extends Controller
     {
         $this->ensureOrganization($user);
         $data = $this->validateOrganizationPost($request);
+        $this->ensureSingleMenuPost($user->id, $data['type']);
         $data['organization_id'] = $user->id;
+        if ($data['type'] === 'menu') {
+            $data['is_pinned'] = true;
+            $data['pin_order'] = 0;
+        }
         if (!empty($data['is_pinned'])) {
-            $data['pin_order'] = ((int) StorePost::where('organization_id', $user->id)->where('is_pinned', true)->max('pin_order')) + 1;
+            $data['pin_order'] ??= ((int) StorePost::where('organization_id', $user->id)->where('is_pinned', true)->max('pin_order')) + 1;
         }
         $post = StorePost::create($data);
         return response()->json(['success' => true, 'post' => $post], 201);
@@ -496,8 +507,13 @@ class AdminController extends Controller
         $this->ensureOrganization($user);
         abort_unless((int) $post->organization_id === (int) $user->id, 404);
         $data = $this->validateOrganizationPost($request);
+        $this->ensureSingleMenuPost($user->id, $data['type'], $post->id);
+        if ($data['type'] === 'menu') {
+            $data['is_pinned'] = true;
+            $data['pin_order'] = 0;
+        }
         if (!empty($data['is_pinned']) && !$post->is_pinned) {
-            $data['pin_order'] = ((int) StorePost::where('organization_id', $user->id)->where('is_pinned', true)->max('pin_order')) + 1;
+            $data['pin_order'] ??= ((int) StorePost::where('organization_id', $user->id)->where('is_pinned', true)->max('pin_order')) + 1;
         } elseif (empty($data['is_pinned'])) {
             $data['pin_order'] = null;
         }
@@ -516,7 +532,7 @@ class AdminController extends Controller
     private function validateOrganizationPost(Request $request): array
     {
         return $request->validate([
-            'type' => ['required', Rule::in(['general', 'offer', 'event'])],
+            'type' => ['required', Rule::in(['general', 'menu', 'offer', 'event'])],
             'source_id' => ['nullable', 'integer'],
             'title' => ['required', 'string', 'max:180'],
             'description' => ['nullable', 'string', 'max:5000'],
@@ -526,6 +542,17 @@ class AdminController extends Controller
             'media.*.type' => ['required', Rule::in(['image', 'video'])],
             'is_pinned' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function ensureSingleMenuPost(int $organizationId, string $type, ?int $ignorePostId = null): void
+    {
+        if ($type !== 'menu') return;
+
+        $query = StorePost::where('organization_id', $organizationId)->where('type', 'menu');
+        if ($ignorePostId) $query->where('id', '!=', $ignorePostId);
+        if ($query->exists()) {
+            throw ValidationException::withMessages(['type' => 'This store already has a Menu post.']);
+        }
     }
 
     public function uploadOrganizationPostMedia(Request $request)
@@ -1154,7 +1181,36 @@ class AdminController extends Controller
     public function uploadCategoryImage(Request $request)
     {
         $request->validate([
-            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+            'image' => [
+                'required',
+                'file',
+                'max:5120',
+                function (string $attribute, mixed $file, \Closure $fail): void {
+                    $extension = strtolower($file->getClientOriginalExtension());
+                    $rasterExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+                    if (in_array($extension, $rasterExtensions, true)) {
+                        return;
+                    }
+
+                    if ($extension !== 'svg') {
+                        $fail('The category image must be an SVG, JPG, PNG, WEBP, or GIF file.');
+                        return;
+                    }
+
+                    $contents = file_get_contents($file->getRealPath());
+                    $isSvg = is_string($contents)
+                        && preg_match('/<svg\b[^>]*xmlns=["\']http:\/\/www\.w3\.org\/2000\/svg["\'][^>]*>/i', $contents);
+                    $hasUnsafeContent = is_string($contents) && preg_match(
+                        '/<script\b|\son[a-z]+\s*=|javascript\s*:|<foreignObject\b/i',
+                        $contents
+                    );
+
+                    if (!$isSvg || $hasUnsafeContent) {
+                        $fail('Please upload a valid SVG without scripts or embedded HTML.');
+                    }
+                },
+            ],
         ]);
 
         $path = $request->file('image')->store('uploads/categories', 'public');
@@ -4008,6 +4064,8 @@ class AdminController extends Controller
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
+            'public_subcategory' => $user->public_subcategory,
+            'public_tag' => $user->public_tag,
             'is_verified' => (bool) $user->is_verified,
             'categories' => $user->categories ?? [],
             'subcategory_id' => $user->subcategory_id,

@@ -132,8 +132,13 @@ class OrganizationController extends Controller
     {
         $data = $this->validatePost($request);
         $data['organization_id'] = $request->user()->id;
+        $this->ensureSingleMenuPost($request->user()->id, $data['type']);
+        if ($data['type'] === 'menu') {
+            $data['is_pinned'] = true;
+            $data['pin_order'] = 0;
+        }
         if (!empty($data['is_pinned'])) {
-            $data['pin_order'] = ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1;
+            $data['pin_order'] ??= ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1;
         }
         $post = StorePost::create($data);
         return response()->json(['success' => true, 'post' => $post], 201);
@@ -143,8 +148,13 @@ class OrganizationController extends Controller
     {
         abort_unless((int) $post->organization_id === (int) $request->user()->id, 404);
         $data = $this->validatePost($request);
+        $this->ensureSingleMenuPost($request->user()->id, $data['type'], $post->id);
+        if ($data['type'] === 'menu') {
+            $data['is_pinned'] = true;
+            $data['pin_order'] = 0;
+        }
         if (!empty($data['is_pinned']) && !$post->is_pinned) {
-            $data['pin_order'] = ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1;
+            $data['pin_order'] ??= ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1;
         } elseif (empty($data['is_pinned'])) {
             $data['pin_order'] = null;
         }
@@ -162,7 +172,7 @@ class OrganizationController extends Controller
     private function validatePost(Request $request): array
     {
         return $request->validate([
-            'type' => ['required', Rule::in(['general', 'offer', 'event'])],
+            'type' => ['required', Rule::in(['general', 'menu', 'offer', 'event'])],
             'source_id' => ['nullable', 'integer'],
             'title' => ['required', 'string', 'max:180'],
             'description' => ['nullable', 'string', 'max:5000'],
@@ -172,6 +182,17 @@ class OrganizationController extends Controller
             'media.*.type' => ['required', Rule::in(['image', 'video'])],
             'is_pinned' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function ensureSingleMenuPost(int $organizationId, string $type, ?int $ignorePostId = null): void
+    {
+        if ($type !== 'menu') return;
+
+        $query = StorePost::where('organization_id', $organizationId)->where('type', 'menu');
+        if ($ignorePostId) $query->where('id', '!=', $ignorePostId);
+        if ($query->exists()) {
+            throw ValidationException::withMessages(['type' => 'This store already has a Menu post.']);
+        }
     }
 
     public function uploadPostMedia(Request $request)
@@ -205,6 +226,8 @@ class OrganizationController extends Controller
         $data = $request->validate([
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
+            'public_subcategory' => ['nullable', 'string', 'max:100'],
+            'public_tag' => ['nullable', 'string', 'max:50'],
             'categories' => ['nullable', 'array'],
             'categories.*' => ['string', 'max:100'],
             'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
@@ -236,19 +259,33 @@ class OrganizationController extends Controller
             'catalog_sections' => ['nullable', 'array'],
             'catalog_sections.*.title' => ['required', 'string', 'max:150'],
             'catalog_sections.*.type' => ['required', 'in:Menu,Products,Services'],
+            'catalog_sections.*.order_no' => ['nullable', 'integer', 'min:1'],
             'catalog_sections.*.items' => ['nullable', 'array'],
             'catalog_sections.*.items.*.name' => ['required', 'string', 'max:150'],
             'catalog_sections.*.items.*.image' => ['nullable', 'string', 'max:500'],
             'catalog_sections.*.items.*.description' => ['nullable', 'string', 'max:500'],
             'catalog_sections.*.items.*.price' => ['nullable', 'string', 'max:60'],
             'catalog_sections.*.items.*.category' => ['nullable', 'string', 'max:100'],
+            'catalog_sections.*.items.*.item_tag' => ['nullable', 'string', 'max:100'],
+            'catalog_sections.*.items.*.item_tags' => ['nullable', 'array', 'max:20'],
+            'catalog_sections.*.items.*.item_tags.*' => ['string', 'max:100'],
+            'catalog_sections.*.items.*.tag_colors' => ['nullable', 'array'],
+            'catalog_sections.*.items.*.tag_colors.*' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}){1,2}$/'],
+            'catalog_sections.*.items.*.tag_color' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}){1,2}$/'],
             'catalog_items' => ['nullable', 'array'],
             'catalog_items.*.type' => ['required', Rule::in(['Menu', 'Product', 'Service'])],
             'catalog_items.*.name' => ['required', 'string', 'max:150'],
             'catalog_items.*.description' => ['nullable', 'string', 'max:500'],
             'catalog_items.*.price' => ['nullable', 'string', 'max:60'],
             'catalog_items.*.category' => ['nullable', 'string', 'max:100'],
+            'catalog_items.*.item_tag' => ['nullable', 'string', 'max:100'],
+            'catalog_items.*.item_tags' => ['nullable', 'array', 'max:20'],
+            'catalog_items.*.item_tags.*' => ['string', 'max:100'],
+            'catalog_items.*.tag_colors' => ['nullable', 'array'],
+            'catalog_items.*.tag_colors.*' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}){1,2}$/'],
+            'catalog_items.*.tag_color' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{3}){1,2}$/'],
             'catalog_items.*.section_name' => ['nullable', 'string', 'max:150'],
+            'catalog_items.*.section_order' => ['nullable', 'integer', 'min:1'],
             'catalog_items.*.order_no' => ['nullable', 'integer', 'min:1'],
             'catalog_items.*.is_pinned' => ['nullable', 'boolean'],
             'catalog_items.*.media' => ['nullable', 'array', 'max:20'],
@@ -360,6 +397,8 @@ class OrganizationController extends Controller
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
+            'public_subcategory' => $user->public_subcategory,
+            'public_tag' => $user->public_tag,
             'is_verified' => (bool) $user->is_verified,
             'categories' => $user->categories ?? [],
             'subcategory_id' => $user->subcategory_id,

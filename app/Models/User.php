@@ -29,6 +29,8 @@ class User extends BaseAuthenticatable
         'status',
         'organization_name',
         'business_type',
+        'public_subcategory',
+        'public_tag',
         'is_verified',
         'categories',
         'subcategory_id',

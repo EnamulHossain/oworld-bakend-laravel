@@ -1217,6 +1217,8 @@ class PublicController extends Controller
         $offset = max((int) $request->query('offset', 0), 0);
         $q = trim((string) $request->query('q', ''));
         $area = trim((string) $request->query('area', ''));
+        $category = trim((string) $request->query('category', ''));
+        $subcategoryId = (int) $request->query('subcategory_id', 0);
 
         $query = User::query()
             ->where('role', 'organization')
@@ -1235,6 +1237,15 @@ class PublicController extends Controller
             ->when($area !== '', function ($builder) use ($area) {
                 $builder->where(function ($inner) use ($area) {
                     $inner->where('address', 'like', "%{$area}%");
+                });
+            })
+            ->when($category !== '', function ($builder) use ($category) {
+                $builder->whereJsonContains('categories', $category);
+            })
+            ->when($subcategoryId > 0, function ($builder) use ($subcategoryId) {
+                $builder->where(function ($inner) use ($subcategoryId) {
+                    $inner->where('subcategory_id', $subcategoryId)
+                        ->orWhereJsonContains('subcategory_ids', $subcategoryId);
                 });
             })
             ->orderBy('organization_name')
@@ -1489,8 +1500,12 @@ class PublicController extends Controller
             'organization_name' => $organization->organization_name,
             'organizationName' => $organization->organization_name,
             'business_type' => $organization->business_type,
+            'public_subcategory' => $organization->public_subcategory,
+            'public_tag' => $organization->public_tag,
             'is_verified' => (bool) $organization->is_verified,
             'categories' => $organization->categories ?? [],
+            'subcategory_id' => $organization->subcategory_id,
+            'subcategory_ids' => $organization->subcategory_ids ?? [],
             'about' => $organization->about,
             'phone' => $organization->phone,
             'whatsapp' => $organization->whatsapp,
