@@ -1219,6 +1219,10 @@ class PublicController extends Controller
         $area = trim((string) $request->query('area', ''));
         $category = trim((string) $request->query('category', ''));
         $subcategoryId = (int) $request->query('subcategory_id', 0);
+        $categoryId = (int) $request->query('category_id', 0);
+        $attributeFilters = collect((array) $request->query('attributes', []))
+            ->map(fn ($values) => array_values(array_unique(array_filter(array_map('intval', (array) $values)))))
+            ->filter(fn ($values) => $values !== []);
 
         $query = User::query()
             ->where('role', 'organization')
@@ -1250,6 +1254,33 @@ class PublicController extends Controller
             })
             ->orderBy('organization_name')
             ->orderBy('username');
+
+        if ($attributeFilters->isNotEmpty()) {
+            $matchingOrganizationIds = (clone $query)
+                ->with(['organizationOffers' => function ($offers) use ($categoryId) {
+                    $offers->whereIn('status', ['published', 'active'])
+                        ->when($categoryId > 0, fn ($offerQuery) => $offerQuery->where('category_id', $categoryId))
+                        ->select(['id', 'organization_id', 'attributes']);
+                }])
+                ->get(['id'])
+                ->filter(function (User $organization) use ($attributeFilters) {
+                    $assignedAttributes = $organization->organizationOffers
+                        ->flatMap(fn ($offer) => is_array($offer->attributes) ? $offer->attributes : [])
+                        ->groupBy(fn ($entry) => (string) ($entry['attribute_id'] ?? ''));
+
+                    return $attributeFilters->every(function ($selectedValueIds, $attributeId) use ($assignedAttributes) {
+                        $availableValueIds = $assignedAttributes->get((string) $attributeId, collect())
+                            ->flatMap(fn ($entry) => (array) ($entry['value_ids'] ?? []))
+                            ->map(fn ($valueId) => (int) $valueId)
+                            ->all();
+
+                        return array_intersect($selectedValueIds, $availableValueIds) !== [];
+                    });
+                })
+                ->pluck('id');
+
+            $query->whereKey($matchingOrganizationIds);
+        }
 
         $total = (clone $query)->count();
         $organizations = $query->skip($offset)->limit($limit)->get()->map(fn ($organization) => $this->formatPublicOrganization($organization));

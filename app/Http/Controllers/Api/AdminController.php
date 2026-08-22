@@ -1184,6 +1184,7 @@ class AdminController extends Controller
             'image' => [
                 'required',
                 'file',
+                // Category SVGs are reduced below 5 MB in the admin UI before upload.
                 'max:5120',
                 function (string $attribute, mixed $file, \Closure $fail): void {
                     $extension = strtolower($file->getClientOriginalExtension());
