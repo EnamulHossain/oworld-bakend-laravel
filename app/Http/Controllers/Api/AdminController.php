@@ -540,6 +540,7 @@ class AdminController extends Controller
             'media' => ['nullable', 'array', 'max:20'],
             'media.*.url' => ['required', 'string', 'max:500'],
             'media.*.type' => ['required', Rule::in(['image', 'video'])],
+            'media.*.caption' => ['nullable', 'string', 'max:500'],
             'is_pinned' => ['nullable', 'boolean'],
         ]);
     }
@@ -3211,7 +3212,7 @@ class AdminController extends Controller
             ->with(['values' => fn ($q) => $q->orderBy('id')]);
 
         if ($request->boolean('with_categories')) {
-            $query->with(['category:id,name']);
+            $query->with(['category:id,name', 'subcategory:id,name,parent_id']);
         }
 
         if ($request->query('search')) {
@@ -3224,6 +3225,9 @@ class AdminController extends Controller
         }
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->query('category_id'));
+        }
+        if ($request->filled('subcategory_id')) {
+            $query->where('subcategory_id', $request->query('subcategory_id'));
         }
         if ($request->query('status')) {
             $status = $this->normalizeAttributeStatus($request->query('status'));
@@ -3250,6 +3254,13 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'subcategory_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('categories', 'id')->where(
+                    fn ($query) => $query->where('parent_id', $request->input('category_id'))
+                ),
+            ],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'auto_expires' => ['nullable', 'boolean'],
@@ -3266,10 +3277,12 @@ class AdminController extends Controller
             );
             $type = $data['type'];
             $categoryId = $type === 'offer' ? ($data['category_id'] ?? null) : null;
+            $subcategoryId = $type === 'offer' && $categoryId ? ($data['subcategory_id'] ?? null) : null;
             $attribute = Attribute::create([
                 'name' => $data['name'],
                 'type' => $type,
                 'category_id' => $categoryId,
+                'subcategory_id' => $subcategoryId,
                 'start_date' => $data['start_date'],
                 'end_date' => $data['end_date'] ?? null,
                 'auto_expires' => (bool) ($data['auto_expires'] ?? true),
@@ -3285,6 +3298,7 @@ class AdminController extends Controller
             $attribute->load([
                 'values' => fn ($q) => $q->orderBy('id'),
                 'category:id,name',
+                'subcategory:id,name,parent_id',
             ]);
 
             return response()->json([
@@ -3300,6 +3314,13 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'subcategory_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('categories', 'id')->where(
+                    fn ($query) => $query->where('parent_id', $request->input('category_id', $attribute->category_id))
+                ),
+            ],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'auto_expires' => ['nullable', 'boolean'],
@@ -3318,8 +3339,14 @@ class AdminController extends Controller
             if (array_key_exists('category_id', $data)) {
                 $attribute->category_id = $data['category_id'];
             }
+            if (array_key_exists('subcategory_id', $data)) {
+                $attribute->subcategory_id = $data['subcategory_id'];
+            }
             if (($attribute->type ?? 'event') !== 'offer') {
                 $attribute->category_id = null;
+                $attribute->subcategory_id = null;
+            } elseif (!$attribute->category_id) {
+                $attribute->subcategory_id = null;
             }
             if (array_key_exists('sort_order', $data)) {
                 $attribute->sort_order = (int) ($data['sort_order'] ?? 0);
@@ -3378,6 +3405,7 @@ class AdminController extends Controller
             $attribute->load([
                 'values' => fn ($q) => $q->orderBy('id'),
                 'category:id,name',
+                'subcategory:id,name,parent_id',
             ]);
 
             return response()->json([

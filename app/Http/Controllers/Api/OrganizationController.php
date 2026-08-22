@@ -180,6 +180,7 @@ class OrganizationController extends Controller
             'media' => ['nullable', 'array', 'max:20'],
             'media.*.url' => ['required', 'string', 'max:500'],
             'media.*.type' => ['required', Rule::in(['image', 'video'])],
+            'media.*.caption' => ['nullable', 'string', 'max:500'],
             'is_pinned' => ['nullable', 'boolean'],
         ]);
     }
@@ -483,6 +484,9 @@ class OrganizationController extends Controller
         }
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->query('category_id'));
+        }
+        if ($request->filled('subcategory_id')) {
+            $query->where('subcategory_id', $request->query('subcategory_id'));
         }
 
         $attributes = $query

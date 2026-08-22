@@ -12,6 +12,7 @@ class Attribute extends BaseModel
         'name',
         'type',
         'category_id',
+        'subcategory_id',
         'start_date',
         'end_date',
         'auto_expires',
@@ -38,5 +39,10 @@ class Attribute extends BaseModel
     public function category()
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function subcategory()
+    {
+        return $this->belongsTo(Category::class, 'subcategory_id');
     }
 }

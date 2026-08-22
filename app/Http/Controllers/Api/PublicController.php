@@ -2050,6 +2050,9 @@ class PublicController extends Controller
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->query('category_id'));
         }
+        if ($request->filled('subcategory_id')) {
+            $query->where('subcategory_id', $request->query('subcategory_id'));
+        }
 
         $attributes = $query
             ->orderByDesc('sort_order')
