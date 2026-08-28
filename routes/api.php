@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\StorePostInteractionController;
+use App\Http\Controllers\Api\StoreFollowController;
 use App\Http\Controllers\Api\AdminStoreOnboardingController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('store-posts/{post}/status', [StorePostInteractionController::class, 'status']);
     Route::post('store-posts/{post}/like', [StorePostInteractionController::class, 'toggleLike']);
     Route::post('store-posts/{post}/comments', [StorePostInteractionController::class, 'addComment']);
+    Route::get('stores/{organization}/follow', [StoreFollowController::class, 'status']);
+    Route::post('stores/{organization}/follow', [StoreFollowController::class, 'toggle']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->group(function () {

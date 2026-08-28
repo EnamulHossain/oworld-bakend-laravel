@@ -1538,6 +1538,7 @@ class PublicController extends Controller
             'subcategory_id' => $organization->subcategory_id,
             'subcategory_ids' => $organization->subcategory_ids ?? [],
             'about' => $organization->about,
+            'store_tags' => $organization->store_tags ?? [],
             'phone' => $organization->phone,
             'whatsapp' => $organization->whatsapp,
             'email' => $organization->email,

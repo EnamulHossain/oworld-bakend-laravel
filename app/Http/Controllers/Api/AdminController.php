@@ -294,6 +294,8 @@ class AdminController extends Controller
             ],
             'address' => ['nullable', 'string', 'max:255'],
             'about' => ['nullable', 'string'],
+            'store_tags' => ['nullable', 'array', 'max:30'],
+            'store_tags.*' => ['string', 'max:100'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
             'interior_media' => ['nullable', 'array', 'max:20'],
@@ -365,6 +367,7 @@ class AdminController extends Controller
             'full_name' => null,
             'dob' => null,
             'about' => $data['about'] ?? null,
+            'store_tags' => $data['store_tags'] ?? [],
         ]);
 
         Role::firstOrCreate(['name' => 'organization', 'guard_name' => 'sanctum']);
@@ -417,6 +420,8 @@ class AdminController extends Controller
             ],
             'address' => ['nullable', 'string', 'max:255'],
             'about' => ['nullable', 'string'],
+            'store_tags' => ['nullable', 'array', 'max:30'],
+            'store_tags.*' => ['string', 'max:100'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'profile_banner' => ['nullable', 'string', 'max:500'],
             'interior_media' => ['nullable', 'array', 'max:20'],
@@ -4104,6 +4109,7 @@ class AdminController extends Controller
             'whatsapp' => $user->whatsapp,
             'address' => $user->address,
             'about' => $user->about,
+            'store_tags' => $user->store_tags ?? [],
             'avatar' => $user->avatar,
             'profile_banner' => $user->profile_banner,
             'interior_media' => $user->interior_media ?? [],

@@ -48,6 +48,7 @@ class User extends BaseAuthenticatable
         'dob',
         'gender',
         'about',
+        'store_tags',
         'google_id',
         'avatar',
         'profile_banner',
@@ -100,6 +101,7 @@ class User extends BaseAuthenticatable
             'catalog_sections' => 'array',
             'catalog_items' => 'array',
             'interior_media' => 'array',
+            'store_tags' => 'array',
         ];
     }
 
