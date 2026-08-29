@@ -182,6 +182,7 @@ Route::middleware(['auth:sanctum', 'role:organization'])->prefix('organization')
 
     Route::get('offers', [OrganizationController::class, 'listOffers']);
     Route::post('offers', [OrganizationController::class, 'storeOffer']);
+    Route::post('offers/with-post', [OrganizationController::class, 'storeOfferWithPost']);
     Route::put('offers/{offer}', [OrganizationController::class, 'updateOffer']);
     Route::delete('offers/{offer}', [OrganizationController::class, 'deleteOffer']);
     Route::post('offers/upload-media', [OrganizationController::class, 'uploadOfferMedia']);

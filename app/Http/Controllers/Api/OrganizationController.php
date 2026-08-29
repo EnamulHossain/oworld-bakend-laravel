@@ -746,6 +746,114 @@ class OrganizationController extends Controller
         return response()->json(['success' => true, 'offer' => $offer], 201);
     }
 
+    public function storeOfferWithPost(Request $request)
+    {
+        $userId = $request->user()->id;
+
+        $data = $request->validate([
+            // Offer fields
+            'name'             => ['required', 'string', 'max:200'],
+            'details'          => ['nullable', 'string'],
+            'start_date'       => ['required', 'date'],
+            'end_date'         => ['required', 'date', 'after:start_date'],
+            'address'          => ['nullable', 'string', 'max:255'],
+            'phone_number'     => ['nullable', 'string', 'max:50'],
+            'facebook_url'     => ['nullable', 'string', 'max:500'],
+            'instagram_url'    => ['nullable', 'string', 'max:500'],
+            'website_url'      => ['nullable', 'string', 'max:500'],
+            'google_map_url'   => ['nullable', 'string', 'max:500'],
+            'discount_type'    => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
+            'discount_value'   => ['nullable', 'numeric', 'min:0'],
+            'thumbnail'        => ['nullable', 'string', 'max:500'],
+            'cover'            => ['nullable', 'string', 'max:500'],
+            'images'           => ['nullable'],
+            'gallery_sort_order' => ['nullable'],
+            'videos'           => ['nullable'],
+            'attributes'       => ['nullable', 'array'],
+            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
+            'attributes.*.value_ids'    => ['nullable', 'array'],
+            'attributes.*.value_ids.*'  => ['integer', 'exists:attribute_values,id'],
+            'category_id'      => ['nullable', 'exists:categories,id'],
+            'event_id'         => ['nullable', 'exists:events,id'],
+            'area_id'          => ['nullable', 'exists:areas,id'],
+            'status'           => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            // Post fields
+            'post_title'       => ['required', 'string', 'max:180'],
+            'post_description' => ['nullable', 'string', 'max:5000'],
+            'post_image'       => ['nullable', 'string', 'max:500'],
+            'post_media'       => ['nullable', 'array', 'max:20'],
+            'post_media.*.url'     => ['required', 'string', 'max:500'],
+            'post_media.*.type'    => ['required', Rule::in(['image', 'video'])],
+            'post_media.*.caption' => ['nullable', 'string', 'max:500'],
+            'is_pinned'        => ['nullable', 'boolean'],
+        ]);
+
+        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
+        if (!is_array($gallerySortOrder)) {
+            $gallerySortOrder = [];
+        }
+
+        $result = DB::transaction(function () use ($data, $gallerySortOrder, $userId) {
+            $offer = Offer::create([
+                'name'             => $data['name'],
+                'details'          => $data['details'] ?? null,
+                'start_date'       => $data['start_date'],
+                'end_date'         => $data['end_date'],
+                'address'          => $data['address'] ?? null,
+                'phone_number'     => $data['phone_number'] ?? null,
+                'facebook_url'     => $data['facebook_url'] ?? null,
+                'instagram_url'    => $data['instagram_url'] ?? null,
+                'website_url'      => $data['website_url'] ?? null,
+                'google_map_url'   => $data['google_map_url'] ?? null,
+                'discount_type'    => $data['discount_type'] ?? null,
+                'discount_value'   => isset($data['discount_value']) ? (float) $data['discount_value'] : null,
+                'thumbnail'        => $data['thumbnail'] ?? null,
+                'cover'            => $data['cover'] ?? null,
+                'images'           => $this->toArrayField($data['images'] ?? []),
+                'gallery_sort_order' => $gallerySortOrder,
+                'videos'           => $this->toArrayField($data['videos'] ?? []),
+                'attributes'       => $this->normalizeAttributes($data['attributes'] ?? []),
+                'category_id'      => $data['category_id'] ?? null,
+                'event_id'         => $data['event_id'] ?? null,
+                'area_id'          => $data['area_id'] ?? null,
+                'status'           => $data['status'] ?? 'active',
+                'created_by'       => $userId,
+                'organization_id'  => $userId,
+            ]);
+
+            $isPinned = !empty($data['is_pinned']);
+            $pinOrder = null;
+            if ($isPinned) {
+                $pinOrder = ((int) StorePost::where('organization_id', $userId)
+                    ->where('is_pinned', true)
+                    ->max('pin_order')) + 1;
+            }
+
+            $post = StorePost::create([
+                'organization_id' => $userId,
+                'type'            => 'offer',
+                'source_id'       => $offer->id,
+                'title'           => $data['post_title'],
+                'description'     => $data['post_description'] ?? null,
+                'image'           => $data['post_image'] ?? null,
+                'media'           => $data['post_media'] ?? null,
+                'is_pinned'       => $isPinned,
+                'pin_order'       => $pinOrder,
+            ]);
+
+            return compact('offer', 'post');
+        });
+
+        $post = $result['post'];
+        $offer = $result['offer'];
+
+        return response()->json([
+            'success' => true,
+            'offer'   => $offer,
+            'post'    => array_merge($post->toArray(), ['post_type' => 'offer']),
+        ], 201);
+    }
+
     public function updateOffer(Request $request, Offer $offer)
     {
         if ($offer->organization_id !== $request->user()->id) {
