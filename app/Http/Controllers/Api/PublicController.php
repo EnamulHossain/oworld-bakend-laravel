@@ -197,7 +197,7 @@ class PublicController extends Controller
         });
     }
 
-    public function categories()
+    public function categories(Request $request)
     {
         $categories = Category::query()
             ->with(['children' => fn ($query) => $query
@@ -205,9 +205,10 @@ class PublicController extends Controller
                 ->select(['id', 'parent_id', 'name', 'short_name', 'image', 'icon', 'order'])])
             ->where('status', 'active')
             ->whereNull('parent_id')
+            ->when($request->query('type') === 'event', fn ($query) => $query->where('is_event_category', true))
             ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order']);
+            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order', 'is_event_category']);
 
         return response()->json([
             'success' => true,

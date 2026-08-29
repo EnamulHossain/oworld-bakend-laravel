@@ -1022,6 +1022,7 @@ class AdminController extends Controller
             ->when($request->query('hierarchy') === 'subcategories', fn ($q) => $q->whereNotNull('parent_id'))
             ->when(!$request->has('hierarchy'), fn ($q) => $q->whereNull('parent_id'))
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            ->when($request->query('type') === 'event', fn ($q) => $q->where('is_event_category', true))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -1111,6 +1112,7 @@ class AdminController extends Controller
             'icon' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
+            'is_event_category' => ['nullable', 'boolean'],
             'description' => ['nullable', 'string'],
             'parent_id' => ['nullable', 'integer', 'exists:categories,id'],
         ]);
@@ -1162,6 +1164,7 @@ class AdminController extends Controller
             'icon' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
+            'is_event_category' => ['nullable', 'boolean'],
             'description' => ['nullable', 'string'],
             'parent_id' => ['nullable', 'integer', 'exists:categories,id', Rule::notIn([$category->id])],
         ]);
@@ -1395,7 +1398,7 @@ class AdminController extends Controller
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in($this->offerEventStatuses())],
-            'starting_date' => ['required', 'date'],
+            'starting_date' => ['required', 'date', 'after_or_equal:today'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['required', 'date', 'after_or_equal:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
@@ -1412,6 +1415,7 @@ class AdminController extends Controller
             'area_ids' => ['nullable', 'array'],
             'area_ids.*' => ['integer', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'organization_id' => ['nullable', 'exists:users,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'serial' => ['nullable', 'integer', 'min:0'],
@@ -1486,6 +1490,7 @@ class AdminController extends Controller
             'area_ids' => ['nullable', 'array'],
             'area_ids.*' => ['integer', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $event->category_id)))],
             'organization_id' => ['nullable', 'exists:users,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'serial' => ['nullable', 'integer', 'min:0'],
