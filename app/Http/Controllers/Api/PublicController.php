@@ -1227,10 +1227,8 @@ class PublicController extends Controller
 
         $query = User::query()
             ->where('role', 'organization')
-            ->where(function ($builder) {
-                $builder->whereNull('status')
-                    ->orWhereIn('status', ['active', 'published']);
-            })
+            ->where('status', 'active')
+            ->where('is_verified', true)
             ->when($q !== '', function ($builder) use ($q) {
                 $builder->where(function ($inner) use ($q) {
                     $inner->where('organization_name', 'like', "%{$q}%")
