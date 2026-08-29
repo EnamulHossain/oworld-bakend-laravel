@@ -17,6 +17,7 @@ class Category extends BaseModel
         'icon',
         'order',
         'status',
+        'is_event_category',
         'description',
         'parent_id',
         'created_by',
@@ -26,6 +27,7 @@ class Category extends BaseModel
         'order' => 'integer',
         'banner' => 'array',
         'gallery_sort_order' => 'array',
+        'is_event_category' => 'boolean',
     ];
 
     public function creator()

@@ -453,13 +453,14 @@ class OrganizationController extends Controller
             ->orderBy('id');
     }
 
-    public function categories()
+    public function categories(Request $request)
     {
         $categories = Category::query()
             ->where('status', 'active')
+            ->when($request->query('type') === 'event', fn ($query) => $query->where('is_event_category', true))
             ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name', 'icon']);
+            ->get(['id', 'name', 'icon', 'is_event_category']);
 
         return response()->json(['success' => true, 'categories' => $categories]);
     }
@@ -556,7 +557,7 @@ class OrganizationController extends Controller
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
-            'starting_date' => ['required', 'date'],
+            'starting_date' => ['required', 'date', 'after_or_equal:today'],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['required', 'date', 'after:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
@@ -569,7 +570,14 @@ class OrganizationController extends Controller
             'google_map_url' => ['nullable', 'string', 'max:500'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
+            'create_post' => ['nullable', 'boolean'],
+            'pin_event' => ['nullable', 'boolean'],
         ]);
+
+        $createPost = (bool) ($data['create_post'] ?? false);
+        $pinEvent = (bool) ($data['pin_event'] ?? false);
+        unset($data['create_post'], $data['pin_event']);
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
@@ -578,16 +586,44 @@ class OrganizationController extends Controller
 
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
-        $event = Event::create([
-            ...$data,
-            'banner' => $this->toArrayField($data['banner'] ?? []),
-            'gallery_sort_order' => $gallerySortOrder,
-            'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-            'created_by' => $request->user()->id,
-            'organization_id' => $request->user()->id,
-        ]);
+        [$event, $post] = DB::transaction(function () use ($data, $gallerySortOrder, $request, $createPost, $pinEvent) {
+            $banner = $this->toArrayField($data['banner'] ?? []);
+            $event = Event::create([
+                ...$data,
+                'banner' => $banner,
+                'gallery_sort_order' => $gallerySortOrder,
+                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
+                'created_by' => $request->user()->id,
+                'organization_id' => $request->user()->id,
+            ]);
 
-        return response()->json(['success' => true, 'event' => $event], 201);
+            $post = null;
+            if ($createPost) {
+                $media = collect($banner)->map(fn ($url) => [
+                    'url' => $url,
+                    'type' => preg_match('/\.(mp4|webm|mov|m4v|ogg)(?:\?.*)?$/i', (string) $url) ? 'video' : 'image',
+                    'caption' => null,
+                ])->values()->all();
+                $pinOrder = $pinEvent
+                    ? ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1
+                    : null;
+                $post = StorePost::create([
+                    'organization_id' => $request->user()->id,
+                    'type' => 'event',
+                    'source_id' => $event->id,
+                    'title' => $event->name,
+                    'description' => $event->description,
+                    'image' => $event->thumbnail ?: ($banner[0] ?? null),
+                    'media' => $media,
+                    'is_pinned' => $pinEvent,
+                    'pin_order' => $pinOrder,
+                ]);
+            }
+
+            return [$event, $post];
+        });
+
+        return response()->json(['success' => true, 'event' => $event, 'post' => $post], 201);
     }
 
     public function updateEvent(Request $request, Event $event)
@@ -620,6 +656,7 @@ class OrganizationController extends Controller
             'google_map_url' => ['nullable', 'string', 'max:500'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $event->category_id)))],
         ]);
 
         if (array_key_exists('banner', $data)) {
