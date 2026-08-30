@@ -232,6 +232,8 @@ class OrganizationController extends Controller
             'categories' => ['nullable', 'array'],
             'categories.*' => ['string', 'max:100'],
             'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'phone' => ['nullable', 'string', 'max:30'],
             'whatsapp' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
@@ -296,17 +298,23 @@ class OrganizationController extends Controller
             'catalog_items.*.media.*.type' => ['required', Rule::in(['image', 'video'])],
         ]);
 
-        if (!empty($data['subcategory_id'])) {
+        $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids'] ?? array_filter([$data['subcategory_id'] ?? null]))));
+        if (!empty($subcategoryIds)) {
             $categoryName = trim((string) ($data['categories'][0] ?? ''));
             $valid = $categoryName !== '' && Category::query()
-                ->whereKey($data['subcategory_id'])
+                ->whereKey($subcategoryIds)
                 ->whereHas('parent', fn ($query) => $query->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($categoryName)]))
-                ->exists();
+                ->count() === count($subcategoryIds);
             if (!$valid) {
                 throw ValidationException::withMessages([
-                    'subcategory_id' => ['Select a valid subcategory for the selected category.'],
+                    'subcategory_ids' => ['Select valid subcategories for the selected category.'],
                 ]);
             }
+        }
+
+        if (array_key_exists('subcategory_ids', $data)) {
+            $data['subcategory_ids'] = $subcategoryIds;
+            $data['subcategory_id'] = $subcategoryIds[0] ?? null;
         }
 
         $request->user()->update($data);
@@ -760,27 +768,67 @@ class OrganizationController extends Controller
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'create_post' => ['nullable', 'boolean'],
+            'is_pinned' => ['nullable', 'boolean'],
         ]);
+
+        $createPost = (bool) ($data['create_post'] ?? false);
+        $isPinned = (bool) ($data['is_pinned'] ?? false);
+        unset($data['create_post'], $data['is_pinned']);
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
             $gallerySortOrder = [];
         }
 
-        $offer = Offer::create([
-            ...$data,
-            'images' => $this->toArrayField($data['images'] ?? []),
-            'gallery_sort_order' => $gallerySortOrder,
-            'videos' => $this->toArrayField($data['videos'] ?? []),
-            'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-            'created_by' => $request->user()->id,
-            'organization_id' => $request->user()->id,
-        ]);
+        [$offer, $post] = DB::transaction(function () use ($data, $gallerySortOrder, $request, $createPost, $isPinned) {
+            $images = $this->toArrayField($data['images'] ?? []);
+            $videos = $this->toArrayField($data['videos'] ?? []);
+            $offer = Offer::create([
+                ...$data,
+                'images' => $images,
+                'gallery_sort_order' => $gallerySortOrder,
+                'videos' => $videos,
+                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
+                'created_by' => $request->user()->id,
+                'organization_id' => $request->user()->id,
+            ]);
 
-        return response()->json(['success' => true, 'offer' => $offer], 201);
+            $post = null;
+            if ($createPost) {
+                $mediaUrls = collect([$offer->thumbnail, $offer->cover])
+                    ->merge($images)
+                    ->filter()
+                    ->unique()
+                    ->map(fn ($url) => ['url' => $url, 'type' => 'image', 'caption' => null]);
+                $media = $mediaUrls->merge(collect($videos)->filter()->unique()->map(
+                    fn ($url) => ['url' => $url, 'type' => 'video', 'caption' => null]
+                ))->values()->all();
+                $pinOrder = $isPinned
+                    ? ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1
+                    : null;
+
+                $post = StorePost::create([
+                    'organization_id' => $request->user()->id,
+                    'type' => 'offer',
+                    'source_id' => $offer->id,
+                    'title' => $offer->name,
+                    'description' => $offer->details,
+                    'image' => $offer->thumbnail ?: $offer->cover,
+                    'media' => $media,
+                    'is_pinned' => $isPinned,
+                    'pin_order' => $pinOrder,
+                ]);
+            }
+
+            return [$offer, $post];
+        });
+
+        return response()->json(['success' => true, 'offer' => $offer, 'post' => $post], 201);
     }
 
     public function storeOfferWithPost(Request $request)
@@ -811,6 +859,7 @@ class OrganizationController extends Controller
             'attributes.*.value_ids'    => ['nullable', 'array'],
             'attributes.*.value_ids.*'  => ['integer', 'exists:attribute_values,id'],
             'category_id'      => ['nullable', 'exists:categories,id'],
+            'subcategory_id'   => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'event_id'         => ['nullable', 'exists:events,id'],
             'area_id'          => ['nullable', 'exists:areas,id'],
             'status'           => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
@@ -851,6 +900,7 @@ class OrganizationController extends Controller
                 'videos'           => $this->toArrayField($data['videos'] ?? []),
                 'attributes'       => $this->normalizeAttributes($data['attributes'] ?? []),
                 'category_id'      => $data['category_id'] ?? null,
+                'subcategory_id'   => $data['subcategory_id'] ?? null,
                 'event_id'         => $data['event_id'] ?? null,
                 'area_id'          => $data['area_id'] ?? null,
                 'status'           => $data['status'] ?? 'active',
@@ -920,6 +970,7 @@ class OrganizationController extends Controller
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $offer->category_id)))],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
