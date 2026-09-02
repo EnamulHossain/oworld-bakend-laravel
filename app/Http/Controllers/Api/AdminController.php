@@ -293,6 +293,7 @@ class AdminController extends Controller
                     ->whereNull('parent_org_id')),
             ],
             'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'integer', 'exists:areas,id'],
             'about' => ['nullable', 'string'],
             'store_tags' => ['nullable', 'array', 'max:30'],
             'store_tags.*' => ['string', 'max:100'],
@@ -351,6 +352,7 @@ class AdminController extends Controller
             'phone' => $data['phone'] ?? null,
             'whatsapp' => $data['whatsapp'] ?? null,
             'address' => $data['address'] ?? null,
+            'area_id' => $data['area_id'] ?? null,
             'avatar' => $data['avatar'] ?? null,
             'profile_banner' => $data['profile_banner'] ?? null,
             'opening_hours' => $data['opening_hours'] ?? null,
@@ -419,6 +421,7 @@ class AdminController extends Controller
                     ->whereNull('parent_org_id')),
             ],
             'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'integer', 'exists:areas,id'],
             'about' => ['nullable', 'string'],
             'store_tags' => ['nullable', 'array', 'max:30'],
             'store_tags.*' => ['string', 'max:100'],
@@ -459,6 +462,10 @@ class AdminController extends Controller
         $user->fill($data);
         $user->role = 'organization';
         $user->save();
+
+        if (array_key_exists('area_id', $data)) {
+            Offer::where('organization_id', $user->id)->update(['area_id' => $data['area_id']]);
+        }
 
         Role::firstOrCreate(['name' => 'organization', 'guard_name' => 'sanctum']);
         $user->syncRoles(['organization']);
@@ -4113,6 +4120,7 @@ class AdminController extends Controller
             'phone' => $user->phone,
             'whatsapp' => $user->whatsapp,
             'address' => $user->address,
+            'area_id' => $user->area_id,
             'about' => $user->about,
             'store_tags' => $user->store_tags ?? [],
             'avatar' => $user->avatar,

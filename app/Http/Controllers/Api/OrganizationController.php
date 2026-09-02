@@ -213,11 +213,15 @@ class OrganizationController extends Controller
     {
         $user = $request->user();
         $branches = $this->organizationBranches($user)->get()->map(fn (User $branch) => $this->formatOrganizationProfile($branch));
+        $branchFamily = $this->branchFamily($user)->map(fn (User $branch) => $this->formatOrganizationProfile($branch));
 
         return response()->json([
             'success' => true,
             'profile' => $this->formatOrganizationProfile($user),
             'branches' => $branches,
+            'branch_family' => $branchFamily,
+            'is_parent_branch' => $user->parent_org_id === null,
+            'parent_branch_id' => $user->parent_org_id,
             'branch_candidates' => $this->branchCandidates($user)->get()->map(fn (User $store) => $this->formatOrganizationProfile($store)),
         ]);
     }
@@ -237,6 +241,7 @@ class OrganizationController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'whatsapp' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
+            'area_id' => ['nullable', 'integer', 'exists:areas,id'],
             'about' => ['nullable', 'string'],
             'store_tags' => ['nullable', 'array', 'max:30'],
             'store_tags.*' => ['string', 'max:100'],
@@ -318,6 +323,9 @@ class OrganizationController extends Controller
         }
 
         $request->user()->update($data);
+        if (array_key_exists('area_id', $data)) {
+            Offer::where('organization_id', $request->user()->id)->update(['area_id' => $data['area_id']]);
+        }
 
         return response()->json([
             'success' => true,
@@ -417,6 +425,7 @@ class OrganizationController extends Controller
             'whatsapp' => $user->whatsapp,
             'email' => $user->email,
             'address' => $user->address,
+            'area_id' => $user->area_id,
             'about' => $user->about,
             'store_tags' => $user->store_tags ?? [],
             'avatar' => $user->avatar,
@@ -459,6 +468,43 @@ class OrganizationController extends Controller
             })
             ->orderBy('organization_name')
             ->orderBy('id');
+    }
+
+    private function branchFamily(User $user)
+    {
+        $parentId = (int) ($user->parent_org_id ?: $user->id);
+        return User::query()
+            ->where('role', 'organization')
+            ->where(function ($query) use ($parentId) {
+                $query->whereKey($parentId)->orWhere('parent_org_id', $parentId);
+            })
+            ->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [$parentId])
+            ->orderBy('organization_name')
+            ->get();
+    }
+
+    private function resolveOfferBranchAssignment(User $user, array $requestedIds): array
+    {
+        $branchIds = collect($requestedIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+        if ($branchIds->isEmpty()) {
+            $branchIds = collect([(int) $user->id]);
+        }
+        $familyIds = $this->branchFamily($user)->pluck('id')->map(fn ($id) => (int) $id);
+        if ($branchIds->diff($familyIds)->isNotEmpty()) {
+            throw ValidationException::withMessages(['branch_ids' => ['Select branches belonging to this store family only.']]);
+        }
+        $isParent = $user->parent_org_id === null;
+        return [
+            'branch_ids' => $branchIds->all(),
+            'branch_assignment_status' => $isParent ? 'approved' : 'pending',
+            'branch_requested_by' => $user->id,
+            'branch_approved_by' => $isParent ? $user->id : null,
+            'branch_approved_at' => $isParent ? now() : null,
+        ];
     }
 
     public function categories(Request $request)
@@ -767,6 +813,8 @@ class OrganizationController extends Controller
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'event_id' => ['nullable', 'exists:events,id'],
@@ -778,14 +826,16 @@ class OrganizationController extends Controller
 
         $createPost = (bool) ($data['create_post'] ?? false);
         $isPinned = (bool) ($data['is_pinned'] ?? false);
+        $branchAssignment = $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids'] ?? []);
         unset($data['create_post'], $data['is_pinned']);
+        unset($data['branch_ids']);
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
             $gallerySortOrder = [];
         }
 
-        [$offer, $post] = DB::transaction(function () use ($data, $gallerySortOrder, $request, $createPost, $isPinned) {
+        [$offer, $post] = DB::transaction(function () use ($data, $gallerySortOrder, $request, $createPost, $isPinned, $branchAssignment) {
             $images = $this->toArrayField($data['images'] ?? []);
             $videos = $this->toArrayField($data['videos'] ?? []);
             $offer = Offer::create([
@@ -794,6 +844,7 @@ class OrganizationController extends Controller
                 'gallery_sort_order' => $gallerySortOrder,
                 'videos' => $videos,
                 'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
+                ...$branchAssignment,
                 'created_by' => $request->user()->id,
                 'organization_id' => $request->user()->id,
             ]);
@@ -858,6 +909,8 @@ class OrganizationController extends Controller
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids'    => ['nullable', 'array'],
             'attributes.*.value_ids.*'  => ['integer', 'exists:attribute_values,id'],
+            'branch_ids'        => ['nullable', 'array'],
+            'branch_ids.*'      => ['integer', 'distinct', 'exists:users,id'],
             'category_id'      => ['nullable', 'exists:categories,id'],
             'subcategory_id'   => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'event_id'         => ['nullable', 'exists:events,id'],
@@ -874,12 +927,17 @@ class OrganizationController extends Controller
             'is_pinned'        => ['nullable', 'boolean'],
         ]);
 
+        // Offer posts inherit their area from the store profile (About section).
+        $data['area_id'] = $request->user()->area_id;
+
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
             $gallerySortOrder = [];
         }
 
-        $result = DB::transaction(function () use ($data, $gallerySortOrder, $userId) {
+        $branchAssignment = $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids'] ?? []);
+
+        $result = DB::transaction(function () use ($data, $gallerySortOrder, $userId, $branchAssignment) {
             $offer = Offer::create([
                 'name'             => $data['name'],
                 'details'          => $data['details'] ?? null,
@@ -899,6 +957,7 @@ class OrganizationController extends Controller
                 'gallery_sort_order' => $gallerySortOrder,
                 'videos'           => $this->toArrayField($data['videos'] ?? []),
                 'attributes'       => $this->normalizeAttributes($data['attributes'] ?? []),
+                ...$branchAssignment,
                 'category_id'      => $data['category_id'] ?? null,
                 'subcategory_id'   => $data['subcategory_id'] ?? null,
                 'event_id'         => $data['event_id'] ?? null,
@@ -969,12 +1028,17 @@ class OrganizationController extends Controller
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $offer->category_id)))],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
         ]);
+
+        // Keep the offer aligned with the store profile instead of an offer-level choice.
+        $data['area_id'] = $request->user()->area_id;
 
         if (array_key_exists('images', $data)) {
             $data['images'] = $this->toArrayField($data['images']);
@@ -989,6 +1053,9 @@ class OrganizationController extends Controller
         if (array_key_exists('attributes', $data)) {
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
         }
+        if (array_key_exists('branch_ids', $data)) {
+            $data = array_merge($data, $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids']));
+        }
 
         $offer->update($data + ['updated_by' => $request->user()->id]);
         return response()->json(['success' => true, 'offer' => $offer->fresh()]);
@@ -1002,6 +1069,40 @@ class OrganizationController extends Controller
 
         $offer->delete();
         return response()->json(['success' => true]);
+    }
+
+    public function branchOfferRequests(Request $request)
+    {
+        $parent = $request->user();
+        if ($parent->parent_org_id !== null) {
+            return response()->json(['success' => true, 'offers' => []]);
+        }
+        $childIds = User::query()->where('parent_org_id', $parent->id)->pluck('id');
+        $offers = Offer::query()
+            ->whereIn('organization_id', $childIds)
+            ->where('branch_assignment_status', 'pending')
+            ->with('organization:id,organization_name,parent_org_id')
+            ->latest()
+            ->get();
+        return response()->json(['success' => true, 'offers' => $offers]);
+    }
+
+    public function decideBranchOfferRequest(Request $request, Offer $offer, string $decision)
+    {
+        $parent = $request->user();
+        if (!in_array($decision, ['approve', 'reject'], true)) {
+            return response()->json(['error' => 'Invalid branch request decision.'], 422);
+        }
+        $requestingBranch = User::query()->find($offer->organization_id);
+        if ($parent->parent_org_id !== null || !$requestingBranch || (int) $requestingBranch->parent_org_id !== (int) $parent->id) {
+            return response()->json(['error' => 'You are not allowed to review this branch request.'], 403);
+        }
+        $offer->update([
+            'branch_assignment_status' => $decision === 'approve' ? 'approved' : 'rejected',
+            'branch_approved_by' => $parent->id,
+            'branch_approved_at' => now(),
+        ]);
+        return response()->json(['success' => true, 'offer' => $offer->fresh()]);
     }
 
     public function uploadOfferMedia(Request $request)

@@ -38,6 +38,7 @@ class User extends BaseAuthenticatable
         'phone',
         'whatsapp',
         'address',
+        'area_id',
         'facebook_url',
         'instagram_url',
         'website_url',
@@ -148,6 +149,11 @@ class User extends BaseAuthenticatable
     public function subcategory()
     {
         return $this->belongsTo(Category::class, 'subcategory_id');
+    }
+
+    public function area()
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function wishlistItems()

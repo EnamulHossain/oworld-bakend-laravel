@@ -1315,7 +1315,11 @@ class PublicController extends Controller
 
         $offers = Offer::query()
             ->with(['category:id,name'])
-            ->where('organization_id', $record->id)
+            ->where('branch_assignment_status', 'approved')
+            ->where(function ($query) use ($record) {
+                $query->where('organization_id', $record->id)
+                    ->orWhereJsonContains('branch_ids', (int) $record->id);
+            })
             ->whereIn('status', ['published', 'active'])
             ->orderBy('sort_order')
             ->orderByDesc('created_at')
@@ -1350,6 +1354,11 @@ class PublicController extends Controller
 
         $posts = StorePost::query()
             ->where('organization_id', $record->id)
+            ->where(function ($query) {
+                $query->where('type', '!=', 'offer')
+                    ->orWhereNull('source_id')
+                    ->orWhereIn('source_id', Offer::query()->where('branch_assignment_status', 'approved')->select('id'));
+            })
             ->withCount(['likes', 'comments'])
             ->orderByDesc('is_pinned')
             ->orderBy('pin_order')
@@ -1542,6 +1551,7 @@ class PublicController extends Controller
             'whatsapp' => $organization->whatsapp,
             'email' => $organization->email,
             'address' => $organization->address,
+            'area_id' => $organization->area_id,
             'avatar' => $organization->avatar,
             'profile_banner' => $organization->profile_banner,
             'interior_media' => $organization->interior_media ?? [],
