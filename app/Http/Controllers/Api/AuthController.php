@@ -64,8 +64,8 @@ class AuthController extends Controller
             'role' => ['nullable', 'in:user,organization,admin'],
             'referral_code' => ['nullable', 'string', 'max:32'],
             'organization_name' => ['nullable', 'string', 'max:255'],
-            'categories' => ['nullable', 'array', 'max:1'],
-            'categories.*' => ['string', 'max:100'],
+            'categories' => ['nullable', 'array', 'max:20'],
+            'categories.*' => ['string', 'distinct', 'max:100'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['required', 'string', 'max:16'],
             'terms_accepted' => ['nullable', 'boolean'],
@@ -87,7 +87,7 @@ class AuthController extends Controller
         if ($role === 'organization') {
             $request->validate([
                 'organization_name' => ['required', 'string', 'max:255'],
-                'categories' => ['required', 'array', 'size:1'],
+                'categories' => ['required', 'array', 'min:1', 'max:20'],
                 'categories.*' => ['required', 'string', 'max:100'],
                 'phone' => ['required', 'string', 'regex:/^\+8801[3-9]\d{8}$/'],
                 'terms_accepted' => ['accepted'],
