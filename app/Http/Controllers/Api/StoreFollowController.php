@@ -24,6 +24,12 @@ class StoreFollowController extends Controller
 
     public function toggle(Request $request, User $organization)
     {
+        if (in_array(strtolower((string) $request->user()->role), ['admin', 'superadmin', 'organization', 'store', 'store_owner'], true)) {
+            return response()->json([
+                'message' => 'Administrator and store-owner accounts are not permitted to follow stores. Please use a customer account to use this feature.',
+            ], 403);
+        }
+
         if ($request->user()->is($organization)) {
             return response()->json(['message' => 'You cannot follow your own store.'], 422);
         }

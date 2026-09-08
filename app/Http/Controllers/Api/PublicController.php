@@ -1227,8 +1227,16 @@ class PublicController extends Controller
 
         $query = User::query()
             ->where('role', 'organization')
-            ->where('status', 'active')
-            ->where('is_verified', true)
+            ->where(function ($builder) {
+                $builder->where(function ($userQuery) {
+                    $userQuery->where('status', 'active')
+                        ->where('is_verified', true);
+                })->orWhereHas('organization', function ($organizationQuery) {
+                    $organizationQuery->where('status', 'active')
+                        ->where('verification_status', 'approved')
+                        ->where('is_verified', true);
+                });
+            })
             ->when($q !== '', function ($builder) use ($q) {
                 $builder->where(function ($inner) use ($q) {
                     $inner->where('organization_name', 'like', "%{$q}%")
@@ -1545,6 +1553,7 @@ class PublicController extends Controller
             'categories' => $organization->categories ?? [],
             'subcategory_id' => $organization->subcategory_id,
             'subcategory_ids' => $organization->subcategory_ids ?? [],
+            'store_filters' => $organization->store_filters ?? [],
             'about' => $organization->about,
             'store_tags' => $organization->store_tags ?? [],
             'phone' => $organization->phone,

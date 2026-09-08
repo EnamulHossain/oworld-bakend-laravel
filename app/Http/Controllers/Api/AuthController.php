@@ -25,7 +25,7 @@ class AuthController extends Controller
     public function checkAvailability(Request $request)
     {
         $data = $request->validate([
-            'field' => ['required', 'in:email,phone,organization_name'],
+            'field' => ['required', 'in:email,phone'],
             'value' => ['required', 'string', 'max:255'],
         ]);
 
@@ -38,12 +38,6 @@ class AuthController extends Controller
             $internationalPhone = '+880' . ltrim($localPhone, '0');
             $exists = User::whereIn('phone', [$localPhone, $internationalPhone])->exists();
             $message = 'This mobile number is already registered.';
-        } elseif ($field === 'organization_name') {
-            $exists = User::query()
-                ->whereNotNull('organization_name')
-                ->whereRaw('LOWER(TRIM(organization_name)) = ?', [Str::lower($value)])
-                ->exists();
-            $message = 'This business name is already registered.';
         } else {
             $exists = User::whereRaw('LOWER(TRIM(email)) = ?', [Str::lower($value)])->exists();
             $message = 'This email address is already registered.';
@@ -94,15 +88,6 @@ class AuthController extends Controller
             ]);
 
             $organizationName = trim($data['organization_name']);
-            if (User::query()
-                ->whereNotNull('organization_name')
-                ->whereRaw('LOWER(TRIM(organization_name)) = ?', [Str::lower($organizationName)])
-                ->exists()) {
-                return response()->json([
-                    'message' => 'This business name is already registered.',
-                    'errors' => ['organization_name' => ['This business name is already registered.']],
-                ], 422);
-            }
             $data['organization_name'] = $organizationName;
 
         } else {
@@ -183,11 +168,14 @@ class AuthController extends Controller
         $user->syncRoles([$role]);
 
         $token = $user->createToken('api')->plainTextToken;
+        $formattedUser = $this->formatUser($user);
+        $formattedUser['requires_organization_verification'] = $role === 'organization';
 
         return response()->json([
             'message' => 'User registered successfully',
             'token' => $token,
-            'user' => $this->formatUser($user),
+            'user' => $formattedUser,
+            'requires_organization_verification' => $role === 'organization',
         ], 201);
     }
 

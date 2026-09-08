@@ -238,6 +238,10 @@ class OrganizationController extends Controller
             'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
             'subcategory_ids' => ['nullable', 'array'],
             'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'store_filters' => ['nullable', 'array'],
+            'store_filters.*.attribute_id' => ['required', 'integer', 'distinct', 'exists:attributes,id'],
+            'store_filters.*.value_ids' => ['nullable', 'array'],
+            'store_filters.*.value_ids.*' => ['integer', 'distinct', 'exists:attribute_values,id'],
             'phone' => ['nullable', 'string', 'max:30'],
             'whatsapp' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
@@ -320,6 +324,10 @@ class OrganizationController extends Controller
         if (array_key_exists('subcategory_ids', $data)) {
             $data['subcategory_ids'] = $subcategoryIds;
             $data['subcategory_id'] = $subcategoryIds[0] ?? null;
+        }
+
+        if (array_key_exists('store_filters', $data)) {
+            $data['store_filters'] = $this->normalizeAttributes($data['store_filters']);
         }
 
         $request->user()->update($data);
@@ -421,6 +429,8 @@ class OrganizationController extends Controller
             'is_verified' => (bool) $user->is_verified,
             'categories' => $user->categories ?? [],
             'subcategory_id' => $user->subcategory_id,
+            'subcategory_ids' => $user->subcategory_ids ?? [],
+            'store_filters' => $user->store_filters ?? [],
             'phone' => $user->phone,
             'whatsapp' => $user->whatsapp,
             'email' => $user->email,
@@ -819,7 +829,7 @@ class OrganizationController extends Controller
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
-            'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'status' => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
             'create_post' => ['nullable', 'boolean'],
             'is_pinned' => ['nullable', 'boolean'],
         ]);
@@ -915,7 +925,7 @@ class OrganizationController extends Controller
             'subcategory_id'   => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'event_id'         => ['nullable', 'exists:events,id'],
             'area_id'          => ['nullable', 'exists:areas,id'],
-            'status'           => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'status'           => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
             // Post fields
             'post_title'       => ['required', 'string', 'max:180'],
             'post_description' => ['nullable', 'string', 'max:5000'],
@@ -1034,7 +1044,7 @@ class OrganizationController extends Controller
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $offer->category_id)))],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
-            'status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'expired'])],
+            'status' => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
         ]);
 
         // Keep the offer aligned with the store profile instead of an offer-level choice.

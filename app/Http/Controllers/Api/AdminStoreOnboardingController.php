@@ -82,6 +82,7 @@ class AdminStoreOnboardingController extends Controller
                 'reviewed_at' => now(), 'rejection_reason' => null,
             ]);
             $organization->update(['status' => 'active', 'verification_status' => 'approved', 'is_verified' => true]);
+            $organization->owner?->update(['status' => 'active', 'is_verified' => true]);
         });
 
         return response()->json(['success' => true, 'message' => 'Store onboarding approved.']);
@@ -98,6 +99,7 @@ class AdminStoreOnboardingController extends Controller
                 'reviewed_at' => now(), 'rejection_reason' => trim($data['reason']),
             ]);
             $organization->update(['status' => 'rejected', 'verification_status' => 'rejected', 'is_verified' => false]);
+            $organization->owner?->update(['status' => 'rejected', 'is_verified' => false]);
         });
 
         return response()->json(['success' => true, 'message' => 'Store onboarding rejected.']);
