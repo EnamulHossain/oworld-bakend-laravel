@@ -1226,6 +1226,7 @@ class PublicController extends Controller
             ->filter(fn ($values) => $values !== []);
 
         $query = User::query()
+            ->with('area:id,name')
             ->where('role', 'organization')
             ->where(function ($builder) {
                 $builder->where(function ($userQuery) {
@@ -1561,6 +1562,10 @@ class PublicController extends Controller
             'email' => $organization->email,
             'address' => $organization->address,
             'area_id' => $organization->area_id,
+            'area' => $organization->area ? [
+                'id' => $organization->area->id,
+                'name' => $organization->area->name,
+            ] : null,
             'avatar' => $organization->avatar,
             'profile_banner' => $organization->profile_banner,
             'interior_media' => $organization->interior_media ?? [],

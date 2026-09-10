@@ -42,4 +42,10 @@ return [
         'frontend_redirect' => rtrim(env('FRONTEND_APP_URL', env('APP_URL', 'http://localhost')), '/') . '/oauth/google/callback',
     ],
 
+    'gennet' => [
+        'domain' => env('GENNET_SMS_DOMAIN'),
+        'api_token' => env('GENNET_SMS_API_TOKEN'),
+        'sid' => env('GENNET_SMS_SID'),
+    ],
+
 ];

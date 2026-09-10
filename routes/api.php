@@ -9,10 +9,13 @@ use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\StorePostInteractionController;
 use App\Http\Controllers\Api\StoreFollowController;
 use App\Http\Controllers\Api\AdminStoreOnboardingController;
+use App\Http\Controllers\Api\SignupOtpController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
+    Route::post('signup-otp/send', [SignupOtpController::class, 'send'])->middleware('throttle:5,1');
+    Route::post('signup-otp/verify', [SignupOtpController::class, 'verify'])->middleware('throttle:10,1');
     Route::post('check-availability', [AuthController::class, 'checkAvailability'])->middleware('throttle:60,1');
     Route::post('login', [AuthController::class, 'login']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);

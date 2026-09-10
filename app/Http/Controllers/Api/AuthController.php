@@ -10,6 +10,7 @@ use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -72,6 +73,7 @@ class AuthController extends Controller
             'signup_source' => ['nullable', 'string', 'max:50'],
             'signup_referrer' => ['nullable', 'string', 'max:500'],
             'signup_utm_campaign' => ['nullable', 'string', 'max:150'],
+            'otp_verification_token' => ['required', 'string', 'size:64'],
         ], [
             'phone.regex' => 'Enter a valid 11-digit Bangladeshi mobile number starting with 013-019.',
         ]);
@@ -110,6 +112,16 @@ class AuthController extends Controller
                 'errors' => [
                     'referral_code' => ['The selected referral code is invalid.'],
                 ],
+            ], 422);
+        }
+
+        $otpCacheKey = 'signup_otp_verified:'.hash('sha256', $data['otp_verification_token']);
+        $verifiedPhone = Cache::get($otpCacheKey);
+        $normalizedPhone = preg_replace('/\D+/', '', $data['phone']);
+        if (!$verifiedPhone || !hash_equals((string) $verifiedPhone, $normalizedPhone)) {
+            return response()->json([
+                'message' => 'Phone verification is required before registration.',
+                'errors' => ['phone' => ['Please verify this phone number with a new OTP.']],
             ], 422);
         }
 
@@ -163,6 +175,7 @@ class AuthController extends Controller
 
             return $user;
         });
+        Cache::forget($otpCacheKey);
 
         Role::firstOrCreate(['name' => $role, 'guard_name' => 'sanctum']);
         $user->syncRoles([$role]);

@@ -33,6 +33,8 @@ class Event extends BaseModel
         'google_map_url',
         'category_id',
         'subcategory_id',
+        'category_ids',
+        'subcategory_ids',
         'sort_order',
         'created_by',
         'organization_id',
@@ -46,6 +48,8 @@ class Event extends BaseModel
         'gallery_sort_order' => 'array',
         'attributes' => 'array',
         'area_ids' => 'array',
+        'category_ids' => 'array',
+        'subcategory_ids' => 'array',
     ];
 
     public function getBannerAttribute($value)

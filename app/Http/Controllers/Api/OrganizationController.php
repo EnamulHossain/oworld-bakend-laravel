@@ -635,6 +635,10 @@ class OrganizationController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'create_post' => ['nullable', 'boolean'],
             'pin_event' => ['nullable', 'boolean'],
         ]);
@@ -642,6 +646,14 @@ class OrganizationController extends Controller
         $createPost = (bool) ($data['create_post'] ?? false);
         $pinEvent = (bool) ($data['pin_event'] ?? false);
         unset($data['create_post'], $data['pin_event']);
+        if (array_key_exists('category_ids', $data)) {
+            $data['category_ids'] = array_values($data['category_ids']);
+            $data['category_id'] = $data['category_ids'][0] ?? null;
+        }
+        if (array_key_exists('subcategory_ids', $data)) {
+            $data['subcategory_ids'] = array_values($data['subcategory_ids']);
+            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
+        }
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
         if (!is_array($gallerySortOrder)) {
@@ -721,6 +733,10 @@ class OrganizationController extends Controller
             'area_id' => ['nullable', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $event->category_id)))],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
         ]);
 
         if (array_key_exists('banner', $data)) {
@@ -732,6 +748,14 @@ class OrganizationController extends Controller
         }
         if (array_key_exists('attributes', $data)) {
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
+        }
+        if (array_key_exists('category_ids', $data)) {
+            $data['category_ids'] = array_values($data['category_ids']);
+            $data['category_id'] = $data['category_ids'][0] ?? null;
+        }
+        if (array_key_exists('subcategory_ids', $data)) {
+            $data['subcategory_ids'] = array_values($data['subcategory_ids']);
+            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
         }
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
 
@@ -923,6 +947,10 @@ class OrganizationController extends Controller
             'branch_ids.*'      => ['integer', 'distinct', 'exists:users,id'],
             'category_id'      => ['nullable', 'exists:categories,id'],
             'subcategory_id'   => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
+            'category_ids'     => ['nullable', 'array'],
+            'category_ids.*'   => ['integer', 'distinct', 'exists:categories,id'],
+            'subcategory_ids'   => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'event_id'         => ['nullable', 'exists:events,id'],
             'area_id'          => ['nullable', 'exists:areas,id'],
             'status'           => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
@@ -968,8 +996,10 @@ class OrganizationController extends Controller
                 'videos'           => $this->toArrayField($data['videos'] ?? []),
                 'attributes'       => $this->normalizeAttributes($data['attributes'] ?? []),
                 ...$branchAssignment,
-                'category_id'      => $data['category_id'] ?? null,
-                'subcategory_id'   => $data['subcategory_id'] ?? null,
+                'category_id'      => ($data['category_ids'] ?? [])[0] ?? ($data['category_id'] ?? null),
+                'subcategory_id'   => ($data['subcategory_ids'] ?? [])[0] ?? ($data['subcategory_id'] ?? null),
+                'category_ids'     => array_values($data['category_ids'] ?? array_filter([$data['category_id'] ?? null])),
+                'subcategory_ids'  => array_values($data['subcategory_ids'] ?? array_filter([$data['subcategory_id'] ?? null])),
                 'event_id'         => $data['event_id'] ?? null,
                 'area_id'          => $data['area_id'] ?? null,
                 'status'           => $data['status'] ?? 'active',
@@ -1042,6 +1072,10 @@ class OrganizationController extends Controller
             'branch_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $offer->category_id)))],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'event_id' => ['nullable', 'exists:events,id'],
             'area_id' => ['nullable', 'exists:areas,id'],
             'status' => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
@@ -1062,6 +1096,14 @@ class OrganizationController extends Controller
         }
         if (array_key_exists('attributes', $data)) {
             $data['attributes'] = $this->normalizeAttributes($data['attributes']);
+        }
+        if (array_key_exists('category_ids', $data)) {
+            $data['category_ids'] = array_values($data['category_ids']);
+            $data['category_id'] = $data['category_ids'][0] ?? null;
+        }
+        if (array_key_exists('subcategory_ids', $data)) {
+            $data['subcategory_ids'] = array_values($data['subcategory_ids']);
+            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
         }
         if (array_key_exists('branch_ids', $data)) {
             $data = array_merge($data, $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids']));

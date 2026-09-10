@@ -3293,8 +3293,8 @@ class AdminController extends Controller
                 (bool) ($data['auto_expires'] ?? true)
             );
             $type = $data['type'];
-            $categoryId = $type === 'offer' ? ($data['category_id'] ?? null) : null;
-            $subcategoryId = $type === 'offer' && $categoryId ? ($data['subcategory_id'] ?? null) : null;
+            $categoryId = $data['category_id'] ?? null;
+            $subcategoryId = $categoryId ? ($data['subcategory_id'] ?? null) : null;
             $attribute = Attribute::create([
                 'name' => $data['name'],
                 'type' => $type,
@@ -3359,10 +3359,7 @@ class AdminController extends Controller
             if (array_key_exists('subcategory_id', $data)) {
                 $attribute->subcategory_id = $data['subcategory_id'];
             }
-            if (($attribute->type ?? 'event') !== 'offer') {
-                $attribute->category_id = null;
-                $attribute->subcategory_id = null;
-            } elseif (!$attribute->category_id) {
+            if (!$attribute->category_id) {
                 $attribute->subcategory_id = null;
             }
             if (array_key_exists('sort_order', $data)) {
