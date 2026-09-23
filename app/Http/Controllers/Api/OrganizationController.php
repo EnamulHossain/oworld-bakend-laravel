@@ -41,16 +41,22 @@ class OrganizationController extends Controller
             'trade_license_no' => ['required', 'string', 'max:100'],
             'trade_license_valid_until' => ['required', 'date'],
             'organization_valid_until' => ['nullable', 'date'],
-            'nid_front' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
-            'nid_back' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
-            'trade_license' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'established_date' => ['required', 'date', 'before_or_equal:today'],
+            'bin_vat_no' => ['nullable', 'string', 'max:100'],
+            'tin_no' => ['nullable', 'string', 'max:100'],
+            'business_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'supporting_document' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'nid_front' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'nid_back' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'trade_license' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
         ]);
 
         $organization = Organization::where('user_id', $request->user()->id)->firstOrFail();
         $storedPaths = [];
 
         try {
-            foreach (['nid_front', 'nid_back', 'trade_license'] as $type) {
+            foreach (['nid_front', 'nid_back', 'trade_license', 'business_photo', 'supporting_document'] as $type) {
+                if (!$request->hasFile($type)) continue;
                 $storedPaths[$type] = $request->file($type)->store(
                     "organization-documents/{$organization->id}",
                     'local'
@@ -61,6 +67,9 @@ class OrganizationController extends Controller
                 $verification = OrganizationVerification::updateOrCreate(
                     ['organization_id' => $organization->id],
                     [
+                        'established_date' => $data['established_date'],
+                        'bin_vat_no' => $data['bin_vat_no'] ?? null,
+                        'tin_no' => $data['tin_no'] ?? null,
                         'owner_full_name' => trim($data['owner_full_name']),
                         'owner_phone' => trim($data['owner_phone']),
                         'owner_email' => trim($data['owner_email']),
@@ -260,6 +269,11 @@ class OrganizationController extends Controller
             'business_hours.*.open' => ['nullable', 'date_format:H:i'],
             'business_hours.*.close' => ['nullable', 'date_format:H:i'],
             'business_hours.*.closed' => ['required', 'boolean'],
+            'contact_email' => ['nullable', 'email', 'max:255'],
+            'messenger_url' => ['nullable', 'url:http,https', 'max:500'],
+            'tiktok_url' => ['nullable', 'url:http,https', 'max:500'],
+            'linkedin_url' => ['nullable', 'url:http,https', 'max:500'],
+            'youtube_url' => ['nullable', 'url:http,https', 'max:500'],
             'facebook_url' => ['nullable', 'string', 'max:500'],
             'instagram_url' => ['nullable', 'string', 'max:500'],
             'website_url' => ['nullable', 'string', 'max:500'],
@@ -434,6 +448,12 @@ class OrganizationController extends Controller
             'phone' => $user->phone,
             'whatsapp' => $user->whatsapp,
             'email' => $user->email,
+            'contact_email' => $user->contact_email,
+            'messenger_url' => $user->messenger_url,
+            'tiktok_url' => $user->tiktok_url,
+            'linkedin_url' => $user->linkedin_url,
+            'youtube_url' => $user->youtube_url,
+
             'address' => $user->address,
             'area_id' => $user->area_id,
             'about' => $user->about,

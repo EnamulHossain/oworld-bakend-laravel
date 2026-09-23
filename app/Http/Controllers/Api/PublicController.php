@@ -1559,7 +1559,7 @@ class PublicController extends Controller
             'store_tags' => $organization->store_tags ?? [],
             'phone' => $organization->phone,
             'whatsapp' => $organization->whatsapp,
-            'email' => $organization->email,
+            'email' => $organization->contact_email ?: $organization->email,
             'address' => $organization->address,
             'area_id' => $organization->area_id,
             'area' => $organization->area ? [

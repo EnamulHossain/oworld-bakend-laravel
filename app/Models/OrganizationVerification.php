@@ -10,7 +10,7 @@ class OrganizationVerification extends Model
         'organization_id', 'owner_full_name', 'owner_phone', 'owner_email',
         'nid_no', 'trade_license_no', 'trade_license_valid_until',
         'organization_valid_until', 'status', 'reviewed_by', 'reviewed_at',
-        'rejection_reason',
+        'rejection_reason', 'established_date', 'bin_vat_no', 'tin_no',
     ];
 
     protected function casts(): array
@@ -19,6 +19,7 @@ class OrganizationVerification extends Model
             'trade_license_valid_until' => 'date',
             'organization_valid_until' => 'date',
             'reviewed_at' => 'datetime',
+            'established_date' => 'date',
         ];
     }
 }
