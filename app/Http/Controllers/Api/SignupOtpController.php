@@ -38,7 +38,9 @@ class SignupOtpController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'A verification code has been sent to your phone. (Mock Mode: Enter any 6 digits e.g. 123456)',
+            'message' => 'Verification code generated.',
+            // Temporary test-flow prefill; remove when enabling live SMS delivery.
+            'test_otp' => $otp,
         ]);
     }
 
@@ -51,11 +53,6 @@ class SignupOtpController extends Controller
         $phone = $this->normalizePhone($data['phone']);
         $otpKey = 'signup_otp:'.hash('sha256', $phone);
 
-        /* -------------------------------------------------------------------------
-         * MOCK / TEST OTP MODE:
-         * Code matching check is commented out below so ANY 6-digit code is accepted.
-         * To re-enable strict OTP code verification, uncomment the check below:
-         *
         $record = Cache::get($otpKey);
         if (!$record || ($record['attempts'] ?? 0) >= 5) {
             throw ValidationException::withMessages(['otp' => 'The verification code has expired. Please request a new one.']);
@@ -65,7 +62,6 @@ class SignupOtpController extends Controller
             Cache::put($otpKey, $record, now()->addMinutes(5));
             throw ValidationException::withMessages(['otp' => 'The verification code is incorrect.']);
         }
-        * ------------------------------------------------------------------------- */
 
         Cache::forget($otpKey);
         $verificationToken = Str::random(64);

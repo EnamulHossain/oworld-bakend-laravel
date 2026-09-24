@@ -323,14 +323,14 @@ class OrganizationController extends Controller
 
         $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids'] ?? array_filter([$data['subcategory_id'] ?? null]))));
         if (!empty($subcategoryIds)) {
-            $categoryName = trim((string) ($data['categories'][0] ?? ''));
-            $valid = $categoryName !== '' && Category::query()
+            $categoryNames = array_values(array_filter(array_map(fn ($name) => Str::lower(trim((string) $name)), $data['categories'] ?? [])));
+            $valid = !empty($categoryNames) && Category::query()
                 ->whereKey($subcategoryIds)
-                ->whereHas('parent', fn ($query) => $query->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($categoryName)]))
+                ->whereHas('parent', fn ($query) => $query->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(name))'), $categoryNames))
                 ->count() === count($subcategoryIds);
             if (!$valid) {
                 throw ValidationException::withMessages([
-                    'subcategory_ids' => ['Select valid subcategories for the selected category.'],
+                    'subcategory_ids' => ['Select valid subcategories for the selected categories.'],
                 ]);
             }
         }

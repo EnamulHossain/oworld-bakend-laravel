@@ -14,9 +14,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
-    Route::post('signup-otp/send', [SignupOtpController::class, 'send'])->middleware('throttle:5,1');
-    Route::post('signup-otp/verify', [SignupOtpController::class, 'verify'])->middleware('throttle:10,1');
-    Route::post('check-availability', [AuthController::class, 'checkAvailability'])->middleware('throttle:60,1');
+    Route::post('signup-otp/send', [SignupOtpController::class, 'send'])->middleware('throttle:5,1,signup-otp-send:');
+    Route::post('signup-otp/verify', [SignupOtpController::class, 'verify'])->middleware('throttle:10,1,signup-otp-verify:');
+    Route::post('check-availability', [AuthController::class, 'checkAvailability'])->middleware('throttle:60,1,signup-availability:');
     Route::post('login', [AuthController::class, 'login']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
