@@ -116,17 +116,17 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
     Route::delete('areas/{area}', [AdminController::class, 'deleteArea']);
 
     Route::get('events', [AdminController::class, 'listEvents']);
-    Route::post('events', [AdminController::class, 'storeEvent']);
+    Route::post('events', [OrganizationController::class, 'storeEvent']);
     Route::put('events/reorder', [AdminController::class, 'reorderEvents']);
-    Route::put('events/{event}', [AdminController::class, 'updateEvent']);
+    Route::put('events/{event}', [OrganizationController::class, 'updateEvent']);
     Route::delete('events/{event}', [AdminController::class, 'deleteEvent']);
     Route::post('events/upload-banner', [AdminController::class, 'uploadEventBanner']);
     Route::post('events/upload-thumbnail', [AdminController::class, 'uploadEventThumbnail']);
 
     Route::get('offers', [AdminController::class, 'listOffers']);
-    Route::post('offers', [AdminController::class, 'storeOffer']);
+    Route::post('offers', [OrganizationController::class, 'storeOffer']);
     Route::put('offers/reorder', [AdminController::class, 'reorderOffers']);
-    Route::put('offers/{offer}', [AdminController::class, 'updateOffer']);
+    Route::put('offers/{offer}', [OrganizationController::class, 'updateOffer']);
     Route::delete('offers/{offer}', [AdminController::class, 'deleteOffer']);
     Route::post('offers/upload-media', [AdminController::class, 'uploadOfferMedia']);
     Route::get('coupons', [AdminController::class, 'listCoupons']);

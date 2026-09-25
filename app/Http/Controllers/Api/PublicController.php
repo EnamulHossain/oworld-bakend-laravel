@@ -1364,9 +1364,13 @@ class PublicController extends Controller
         $posts = StorePost::query()
             ->where('organization_id', $record->id)
             ->where(function ($query) {
+                $query->where('type', '!=', 'event')->orWhereNull('source_id')
+                    ->orWhereIn('source_id', Event::query()->whereIn('status', ['published', 'active'])->select('id'));
+            })
+            ->where(function ($query) {
                 $query->where('type', '!=', 'offer')
                     ->orWhereNull('source_id')
-                    ->orWhereIn('source_id', Offer::query()->where('branch_assignment_status', 'approved')->select('id'));
+                    ->orWhereIn('source_id', Offer::query()->where('branch_assignment_status', 'approved')->whereIn('status', ['published', 'active'])->select('id'));
             })
             ->withCount(['likes', 'comments'])
             ->orderByDesc('is_pinned')

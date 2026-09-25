@@ -15,22 +15,28 @@ class AdminStoreOnboardingController extends Controller
     {
         $query = Organization::query()
             ->with(['verification', 'owner:id,username,email,phone', 'category:id,name'])
-            ->whereHas('verification')
+            ->withCount('documents')
+            ->whereDoesntHave('verification', fn ($verification) => $verification->where('status', 'approved'))
             ->orderByDesc('created_at');
 
         if ($status = trim((string) $request->query('status', ''))) {
-            $query->whereHas('verification', fn ($builder) => $builder->where('status', $status));
+            $query->where(function ($builder) use ($status) {
+                $builder->whereHas('verification', fn ($verification) => $verification->where('status', $status));
+                if ($status === 'pending') $builder->orWhereDoesntHave('verification');
+            });
         }
 
         return response()->json(['success' => true, 'onboardings' => $query->get()->map(fn ($organization) => [
             'id' => $organization->id,
             'name' => $organization->name,
+            'store_id' => $organization->user_id,
+            'documents_count' => $organization->documents_count,
             'email' => $organization->email ?: $organization->owner?->email,
             'phone' => $organization->phone ?: $organization->owner?->phone,
             'category' => $organization->category?->name,
-            'owner_full_name' => $organization->verification?->owner_full_name,
-            'status' => $organization->verification?->status,
-            'submitted_at' => $organization->verification?->created_at,
+            'owner_full_name' => $organization->verification?->owner_full_name ?: $organization->owner?->username,
+            'status' => $organization->verification?->status ?? 'pending',
+            'submitted_at' => $organization->verification?->created_at ?? $organization->created_at,
         ])]);
     }
 
@@ -68,16 +74,9 @@ class AdminStoreOnboardingController extends Controller
 
     public function approve(Request $request, Organization $organization)
     {
-        abort_unless($organization->verification, 404, 'Onboarding submission not found.');
-        $requiredTypes = ['nid_front', 'nid_back', 'trade_license'];
-        abort_unless(
-            $organization->documents()->whereIn('document_type', $requiredTypes)->distinct()->count('document_type') === count($requiredTypes),
-            422,
-            'All required documents must be uploaded before approval.'
-        );
-
+        // Documents are temporarily optional for store approval.
         DB::transaction(function () use ($request, $organization) {
-            $organization->verification->update([
+            $organization->verification()->updateOrCreate(['organization_id' => $organization->id], [
                 'status' => 'approved', 'reviewed_by' => $request->user()->id,
                 'reviewed_at' => now(), 'rejection_reason' => null,
             ]);
@@ -91,10 +90,10 @@ class AdminStoreOnboardingController extends Controller
     public function reject(Request $request, Organization $organization)
     {
         $data = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
-        abort_unless($organization->verification, 404, 'Onboarding submission not found.');
+
 
         DB::transaction(function () use ($request, $organization, $data) {
-            $organization->verification->update([
+            $organization->verification()->updateOrCreate(['organization_id' => $organization->id], [
                 'status' => 'rejected', 'reviewed_by' => $request->user()->id,
                 'reviewed_at' => now(), 'rejection_reason' => trim($data['reason']),
             ]);

@@ -182,13 +182,13 @@ class AuthController extends Controller
 
         $token = $user->createToken('api')->plainTextToken;
         $formattedUser = $this->formatUser($user);
-        $formattedUser['requires_organization_verification'] = $role === 'organization';
+        $formattedUser['requires_organization_verification'] = false;
 
         return response()->json([
             'message' => 'User registered successfully',
             'token' => $token,
             'user' => $formattedUser,
-            'requires_organization_verification' => $role === 'organization',
+            'requires_organization_verification' => false,
         ], 201);
     }
 
@@ -258,15 +258,8 @@ class AuthController extends Controller
             ]
         );
 
-        $requiredDocumentTypes = ['nid_front', 'nid_back', 'trade_license'];
-        $documentCount = $organization->documents()
-            ->whereIn('document_type', $requiredDocumentTypes)
-            ->distinct()
-            ->count('document_type');
-
-        return !$organization->verification()->exists()
-            || $organization->verification()->where('status', 'rejected')->exists()
-            || $documentCount !== count($requiredDocumentTypes);
+        // Document verification is temporarily optional during signup and login.
+        return false;
     }
 
     private function findUserForLogin(string $identifier): ?User

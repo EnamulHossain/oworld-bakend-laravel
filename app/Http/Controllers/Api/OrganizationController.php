@@ -34,21 +34,21 @@ class OrganizationController extends Controller
         abort_unless($request->user()?->role === 'organization', 403, 'Only organization accounts can submit verification.');
 
         $data = $request->validate([
-            'owner_full_name' => ['required', 'string', 'max:120'],
-            'owner_phone' => ['required', 'string', 'max:30'],
-            'owner_email' => ['required', 'email', 'max:255'],
-            'nid_no' => ['required', 'string', 'max:50'],
-            'trade_license_no' => ['required', 'string', 'max:100'],
-            'trade_license_valid_until' => ['required', 'date'],
+            'owner_full_name' => ['nullable', 'string', 'max:120'],
+            'owner_phone' => ['nullable', 'string', 'max:30'],
+            'owner_email' => ['nullable', 'email', 'max:255'],
+            'nid_no' => ['nullable', 'string', 'max:50'],
+            'trade_license_no' => ['nullable', 'string', 'max:100'],
+            'trade_license_valid_until' => ['nullable', 'date'],
             'organization_valid_until' => ['nullable', 'date'],
-            'established_date' => ['required', 'date', 'before_or_equal:today'],
+            'established_date' => ['nullable', 'date', 'before_or_equal:today'],
             'bin_vat_no' => ['nullable', 'string', 'max:100'],
             'tin_no' => ['nullable', 'string', 'max:100'],
-            'business_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'business_photo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
             'supporting_document' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
-            'nid_front' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
-            'nid_back' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
-            'trade_license' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'nid_front' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'nid_back' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'trade_license' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
         ]);
 
         $organization = Organization::where('user_id', $request->user()->id)->firstOrFail();
@@ -67,15 +67,15 @@ class OrganizationController extends Controller
                 $verification = OrganizationVerification::updateOrCreate(
                     ['organization_id' => $organization->id],
                     [
-                        'established_date' => $data['established_date'],
+                        'established_date' => $data['established_date'] ?? null,
                         'bin_vat_no' => $data['bin_vat_no'] ?? null,
                         'tin_no' => $data['tin_no'] ?? null,
-                        'owner_full_name' => trim($data['owner_full_name']),
-                        'owner_phone' => trim($data['owner_phone']),
-                        'owner_email' => trim($data['owner_email']),
-                        'nid_no' => trim($data['nid_no']),
-                        'trade_license_no' => trim($data['trade_license_no']),
-                        'trade_license_valid_until' => $data['trade_license_valid_until'],
+                        'owner_full_name' => isset($data['owner_full_name']) ? trim($data['owner_full_name']) : null,
+                        'owner_phone' => isset($data['owner_phone']) ? trim($data['owner_phone']) : null,
+                        'owner_email' => isset($data['owner_email']) ? trim($data['owner_email']) : null,
+                        'nid_no' => isset($data['nid_no']) ? trim($data['nid_no']) : null,
+                        'trade_license_no' => isset($data['trade_license_no']) ? trim($data['trade_license_no']) : null,
+                        'trade_license_valid_until' => $data['trade_license_valid_until'] ?? null,
                         'organization_valid_until' => $data['organization_valid_until'] ?? now()->addYears(100)->toDateString(),
                         'status' => 'pending',
                         'reviewed_by' => null,
@@ -630,157 +630,70 @@ class OrganizationController extends Controller
 
     public function storeEvent(Request $request)
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:200'],
-            'description' => ['nullable', 'string'],
-            'banner' => ['nullable'],
-            'thumbnail' => ['nullable', 'string', 'max:500'],
-            'gallery_sort_order' => ['nullable'],
-            'attributes' => ['nullable', 'array'],
-            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
-            'attributes.*.value_ids' => ['nullable', 'array'],
-            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
-            'starting_date' => ['required', 'date', 'after_or_equal:today'],
-            'start_time' => ['nullable', 'date_format:H:i'],
-            'end_date' => ['required', 'date', 'after:starting_date'],
-            'end_time' => ['nullable', 'date_format:H:i'],
-            'location' => ['nullable', 'string', 'max:255'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:50'],
-            'facebook_url' => ['nullable', 'string', 'max:500'],
-            'instagram_url' => ['nullable', 'string', 'max:500'],
-            'website_url' => ['nullable', 'string', 'max:500'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'area_id' => ['nullable', 'exists:areas,id'],
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
-            'category_ids' => ['nullable', 'array'],
-            'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
-            'subcategory_ids' => ['nullable', 'array'],
-            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
-            'create_post' => ['nullable', 'boolean'],
-            'pin_event' => ['nullable', 'boolean'],
-        ]);
-
-        $createPost = (bool) ($data['create_post'] ?? false);
-        $pinEvent = (bool) ($data['pin_event'] ?? false);
-        unset($data['create_post'], $data['pin_event']);
-        if (array_key_exists('category_ids', $data)) {
-            $data['category_ids'] = array_values($data['category_ids']);
-            $data['category_id'] = $data['category_ids'][0] ?? null;
-        }
-        if (array_key_exists('subcategory_ids', $data)) {
-            $data['subcategory_ids'] = array_values($data['subcategory_ids']);
-            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
-        }
-
-        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
-        if (!is_array($gallerySortOrder)) {
-            $gallerySortOrder = [];
-        }
-
-        $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
-
-        [$event, $post] = DB::transaction(function () use ($data, $gallerySortOrder, $request, $createPost, $pinEvent) {
-            $banner = $this->toArrayField($data['banner'] ?? []);
-            $event = Event::create([
-                ...$data,
-                'banner' => $banner,
-                'gallery_sort_order' => $gallerySortOrder,
-                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-                'created_by' => $request->user()->id,
-                'organization_id' => $request->user()->id,
-            ]);
-
-            $post = null;
-            if ($createPost) {
-                $media = collect($banner)->map(fn ($url) => [
-                    'url' => $url,
-                    'type' => preg_match('/\.(mp4|webm|mov|m4v|ogg)(?:\?.*)?$/i', (string) $url) ? 'video' : 'image',
-                    'caption' => null,
-                ])->values()->all();
-                $pinOrder = $pinEvent
-                    ? ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1
-                    : null;
-                $post = StorePost::create([
-                    'organization_id' => $request->user()->id,
-                    'type' => 'event',
-                    'source_id' => $event->id,
-                    'title' => $event->name,
-                    'description' => $event->description,
-                    'image' => $event->thumbnail ?: ($banner[0] ?? null),
-                    'media' => $media,
-                    'is_pinned' => $pinEvent,
-                    'pin_order' => $pinOrder,
-                ]);
-            }
-
-            return [$event, $post];
-        });
-
-        return response()->json(['success' => true, 'event' => $event, 'post' => $post], 201);
+        return $this->saveEventAndPost($request);
     }
 
     public function updateEvent(Request $request, Event $event)
     {
-        if ($event->organization_id !== $request->user()->id) {
-            return response()->json(['error' => 'You are not allowed to manage this event.'], 403);
-        }
+        return $this->saveEventAndPost($request, $event);
+    }
 
-        $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:200'],
-            'description' => ['nullable', 'string'],
-            'banner' => ['nullable'],
-            'thumbnail' => ['nullable', 'string', 'max:500'],
-            'gallery_sort_order' => ['nullable'],
-            'attributes' => ['nullable', 'array'],
-            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
-            'attributes.*.value_ids' => ['nullable', 'array'],
-            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'status' => ['nullable', Rule::in(['draft', 'published', 'cancelled', 'completed'])],
-            'starting_date' => ['nullable', 'date'],
-            'start_time' => ['nullable', 'date_format:H:i'],
-            'end_date' => ['nullable', 'date', 'after:starting_date'],
-            'end_time' => ['nullable', 'date_format:H:i'],
-            'location' => ['nullable', 'string', 'max:255'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:50'],
-            'facebook_url' => ['nullable', 'string', 'max:500'],
-            'instagram_url' => ['nullable', 'string', 'max:500'],
-            'website_url' => ['nullable', 'string', 'max:500'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'area_id' => ['nullable', 'exists:areas,id'],
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $event->category_id)))],
+    private function saveEventAndPost(Request $request, ?Event $event = null)
+    {
+        $actor = $request->user();
+        $isAdmin = in_array($actor->role, ['admin', 'superAdmin'], true);
+        abort_unless($isAdmin || $actor->role === 'organization', 403);
+        if (!$isAdmin && $event && (int) $event->organization_id !== (int) $actor->id) abort(403);
+        $storeId = $isAdmin ? $request->input('organization_id', $event?->organization_id) : $actor->id;
+        $store = User::where('role', 'organization')->find($storeId);
+        if (!$store) throw ValidationException::withMessages(['organization_id' => ['Select a valid store.']]);
+        $request->merge(['organization_id' => $store->id]);
+        $extra = $request->validate([
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'subcategory_ids' => ['nullable', 'array'],
             'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'create_post' => ['nullable', 'boolean'],
+            'pin_event' => ['nullable', 'boolean'],
         ]);
+        $categoryIds = array_map('intval', $extra['category_ids'] ?? (
+            $request->has('category_id') && (string) $request->input('category_id') !== (string) $event?->category_id
+                ? array_filter([$request->input('category_id')]) : ($event?->category_ids ?: array_filter([$request->input('category_id', $event?->category_id)]))
+        ));
+        $subcategoryIds = array_map('intval', $extra['subcategory_ids'] ?? (
+            $request->has('subcategory_id') && (string) $request->input('subcategory_id') !== (string) $event?->subcategory_id
+                ? array_filter([$request->input('subcategory_id')]) : ($event?->subcategory_ids ?: array_filter([$request->input('subcategory_id', $event?->subcategory_id)]))
+        ));
+        if (Category::whereIn('id', $subcategoryIds)->whereIn('parent_id', $categoryIds)->count() !== count($subcategoryIds)) {
+            throw ValidationException::withMessages(['subcategory_ids' => ['Choose subcategories belonging to the selected categories.']]);
+        }
+        // Validate all parent relationships above rather than only the first category.
+        $request->merge(['category_id' => $categoryIds[0] ?? null, 'subcategory_id' => null]);
+        if ($request->input('status') === 'cancelled') $request->merge(['status' => 'canceled']);
+        if ($request->input('status') === 'completed') $request->merge(['status' => 'expired']);
 
-        if (array_key_exists('banner', $data)) {
-            $data['banner'] = $this->toArrayField($data['banner']);
-        }
-        if (array_key_exists('gallery_sort_order', $data)) {
-            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
-            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
-        }
-        if (array_key_exists('attributes', $data)) {
-            $data['attributes'] = $this->normalizeAttributes($data['attributes']);
-        }
-        if (array_key_exists('category_ids', $data)) {
-            $data['category_ids'] = array_values($data['category_ids']);
-            $data['category_id'] = $data['category_ids'][0] ?? null;
-        }
-        if (array_key_exists('subcategory_ids', $data)) {
-            $data['subcategory_ids'] = array_values($data['subcategory_ids']);
-            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
-        }
-        $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
-
-        $event->update($data);
-        return response()->json(['success' => true, 'event' => $event]);
+        return DB::transaction(function () use ($request, $event, $store, $extra, $categoryIds, $subcategoryIds) {
+            if ($event) $event = Event::whereKey($event->id)->lockForUpdate()->firstOrFail();
+            $writer = app(AdminController::class);
+            $response = $event ? $writer->updateEvent($request, $event) : $writer->storeEvent($request);
+            $saved = Event::findOrFail($response->getData(true)['event']['id']);
+            $saved->update(['category_ids' => $categoryIds, 'subcategory_ids' => $subcategoryIds, 'subcategory_id' => $subcategoryIds[0] ?? null]);
+            $post = StorePost::where('type', 'event')->where('source_id', $saved->id)->first();
+            $media = collect($saved->banner ?? [])->filter()->unique()->map(fn ($url) => [
+                'url' => $url, 'type' => preg_match('/\.(mp4|webm|mov|m4v|ogg)(?:\?.*)?$/i', (string) $url) ? 'video' : 'image', 'caption' => null,
+            ])->values()->all();
+            $pinned = $extra['pin_event'] ?? $post?->is_pinned ?? false;
+            $sameStore = $post && (int) $post->organization_id === (int) $store->id;
+            $pinOrder = $pinned ? (($sameStore ? $post->pin_order : null) ?? ((int) StorePost::where('organization_id', $store->id)->max('pin_order') + 1)) : null;
+            $post = StorePost::updateOrCreate(['type' => 'event', 'source_id' => $saved->id], [
+                'organization_id' => $store->id, 'title' => $saved->name,
+                'description' => $saved->description, 'image' => $saved->thumbnail ?: collect($media)->firstWhere('type', 'image')['url'] ?? null,
+                'media' => $media, 'is_pinned' => $pinned, 'pin_order' => $pinOrder,
+            ]);
+            return response()->json(['success' => true, 'event' => $saved->fresh(), 'post' => $post], $event ? 200 : 201);
+        });
     }
 
     public function deleteEvent(Request $request, Event $event)
@@ -845,95 +758,7 @@ class OrganizationController extends Controller
 
     public function storeOffer(Request $request)
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:200'],
-            'details' => ['nullable', 'string'],
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after:start_date'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:50'],
-            'facebook_url' => ['nullable', 'string', 'max:500'],
-            'instagram_url' => ['nullable', 'string', 'max:500'],
-            'website_url' => ['nullable', 'string', 'max:500'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
-            'discount_value' => ['nullable', 'numeric', 'min:0'],
-            'thumbnail' => ['nullable', 'string', 'max:500'],
-            'cover' => ['nullable', 'string', 'max:500'],
-            'images' => ['nullable'],
-            'gallery_sort_order' => ['nullable'],
-            'videos' => ['nullable'],
-            'attributes' => ['nullable', 'array'],
-            'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
-            'attributes.*.value_ids' => ['nullable', 'array'],
-            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'branch_ids' => ['nullable', 'array'],
-            'branch_ids.*' => ['integer', 'distinct', 'exists:users,id'],
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
-            'event_id' => ['nullable', 'exists:events,id'],
-            'area_id' => ['nullable', 'exists:areas,id'],
-            'status' => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
-            'create_post' => ['nullable', 'boolean'],
-            'is_pinned' => ['nullable', 'boolean'],
-        ]);
-
-        $createPost = (bool) ($data['create_post'] ?? false);
-        $isPinned = (bool) ($data['is_pinned'] ?? false);
-        $branchAssignment = $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids'] ?? []);
-        unset($data['create_post'], $data['is_pinned']);
-        unset($data['branch_ids']);
-
-        $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
-        if (!is_array($gallerySortOrder)) {
-            $gallerySortOrder = [];
-        }
-
-        [$offer, $post] = DB::transaction(function () use ($data, $gallerySortOrder, $request, $createPost, $isPinned, $branchAssignment) {
-            $images = $this->toArrayField($data['images'] ?? []);
-            $videos = $this->toArrayField($data['videos'] ?? []);
-            $offer = Offer::create([
-                ...$data,
-                'images' => $images,
-                'gallery_sort_order' => $gallerySortOrder,
-                'videos' => $videos,
-                'attributes' => $this->normalizeAttributes($data['attributes'] ?? []),
-                ...$branchAssignment,
-                'created_by' => $request->user()->id,
-                'organization_id' => $request->user()->id,
-            ]);
-
-            $post = null;
-            if ($createPost) {
-                $mediaUrls = collect([$offer->thumbnail, $offer->cover])
-                    ->merge($images)
-                    ->filter()
-                    ->unique()
-                    ->map(fn ($url) => ['url' => $url, 'type' => 'image', 'caption' => null]);
-                $media = $mediaUrls->merge(collect($videos)->filter()->unique()->map(
-                    fn ($url) => ['url' => $url, 'type' => 'video', 'caption' => null]
-                ))->values()->all();
-                $pinOrder = $isPinned
-                    ? ((int) StorePost::where('organization_id', $request->user()->id)->where('is_pinned', true)->max('pin_order')) + 1
-                    : null;
-
-                $post = StorePost::create([
-                    'organization_id' => $request->user()->id,
-                    'type' => 'offer',
-                    'source_id' => $offer->id,
-                    'title' => $offer->name,
-                    'description' => $offer->details,
-                    'image' => $offer->thumbnail ?: $offer->cover,
-                    'media' => $media,
-                    'is_pinned' => $isPinned,
-                    'pin_order' => $pinOrder,
-                ]);
-            }
-
-            return [$offer, $post];
-        });
-
-        return response()->json(['success' => true, 'offer' => $offer, 'post' => $post], 201);
+        return $this->saveOfferAndPost($request);
     }
 
     public function storeOfferWithPost(Request $request)
@@ -1062,75 +887,104 @@ class OrganizationController extends Controller
 
     public function updateOffer(Request $request, Offer $offer)
     {
-        if ($offer->organization_id !== $request->user()->id) {
-            return response()->json(['error' => 'You are not allowed to manage this offer.'], 403);
-        }
+        return $this->saveOfferAndPost($request, $offer);
+    }
 
-        $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:200'],
-            'details' => ['nullable', 'string'],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after:start_date'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone_number' => ['nullable', 'string', 'max:50'],
-            'facebook_url' => ['nullable', 'string', 'max:500'],
-            'instagram_url' => ['nullable', 'string', 'max:500'],
-            'website_url' => ['nullable', 'string', 'max:500'],
-            'google_map_url' => ['nullable', 'string', 'max:500'],
-            'discount_type' => ['nullable', Rule::in(['percentage', 'flat', 'bogo', 'custom'])],
-            'discount_value' => ['nullable', 'numeric', 'min:0'],
-            'thumbnail' => ['nullable', 'string', 'max:500'],
-            'cover' => ['nullable', 'string', 'max:500'],
-            'images' => ['nullable'],
-            'gallery_sort_order' => ['nullable'],
-            'videos' => ['nullable'],
+    private function saveOfferAndPost(Request $request, ?Offer $offer = null)
+    {
+        $actor = $request->user();
+        $isAdmin = in_array($actor->role, ['admin', 'superAdmin'], true);
+        abort_unless($isAdmin || $actor->role === 'organization', 403);
+        if (!$isAdmin && $offer && (int) $offer->organization_id !== (int) $actor->id) abort(403);
+
+        $storeId = $isAdmin ? $request->input('organization_id', $offer?->organization_id) : $actor->id;
+        $store = User::where('role', 'organization')->find($storeId);
+        if (!$store) throw ValidationException::withMessages(['organization_id' => ['Select a valid store.']]);
+        $request->merge(['organization_id' => $store->id]);
+        $request->merge(['area_id' => $store->area_id, 'area_ids' => $store->area_id ? [$store->area_id] : []]);
+        if ($request->has('is_exclusive') && !$request->has('offer_type')) {
+            $request->merge(['offer_type' => $request->boolean('is_exclusive') ? 'exclusive' : 'regular']);
+        }
+        $extra = $request->validate([
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'subcategory_ids' => ['nullable', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'attributes' => ['nullable', 'array'],
             'attributes.*.attribute_id' => ['required', 'integer', 'exists:attributes,id'],
             'attributes.*.value_ids' => ['nullable', 'array'],
-            'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
-            'branch_ids' => ['nullable', 'array'],
-            'branch_ids.*' => ['integer', 'distinct', 'exists:users,id'],
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $offer->category_id)))],
-            'category_ids' => ['nullable', 'array'],
-            'category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
-            'subcategory_ids' => ['nullable', 'array'],
-            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
-            'event_id' => ['nullable', 'exists:events,id'],
-            'area_id' => ['nullable', 'exists:areas,id'],
-            'status' => ['nullable', Rule::in(['draft', 'scheduled', 'published', 'expired', 'archived', 'cancelled'])],
+            'attributes.*.value_ids.*' => ['integer', 'distinct', 'exists:attribute_values,id'],
+            'create_post' => ['nullable', 'boolean'],
+            'is_pinned' => ['nullable', 'boolean'],
         ]);
+        $categoryIds = array_map('intval', $extra['category_ids'] ?? ($request->has('category_id') ? array_filter([$request->input('category_id')]) : ($offer?->category_ids ?: array_filter([$offer?->category_id]))));
+        $subcategoryIds = array_map('intval', $extra['subcategory_ids'] ?? ($request->has('subcategory_id') ? array_filter([$request->input('subcategory_id')]) : ($offer?->subcategory_ids ?: array_filter([$offer?->subcategory_id]))));
+        $allowedCategoryIds = Category::whereNull('parent_id')->where('status', 'active')
+            ->whereIn('name', $store->categories ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $allowedSubcategoryIds = array_map('intval', $store->subcategory_ids ?? array_filter([$store->subcategory_id]));
+        if (array_diff($categoryIds, $allowedCategoryIds)) {
+            throw ValidationException::withMessages(['category_ids' => ['Choose categories assigned to this store in About.']]);
+        }
+        if (array_diff($subcategoryIds, $allowedSubcategoryIds)
+            || Category::whereIn('id', $subcategoryIds)->whereIn('parent_id', $categoryIds)->where('status', 'active')->count() !== count($subcategoryIds)) {
+            throw ValidationException::withMessages(['subcategory_ids' => ['Choose subcategories assigned to this store and the selected categories.']]);
+        }
+        foreach ($extra['attributes'] ?? [] as $selection) {
+            $storeSelection = collect($store->store_filters ?? [])->first(fn ($filter) => (int) $filter['attribute_id'] === (int) $selection['attribute_id']);
+            if (!$storeSelection || array_diff(array_map('intval', $selection['value_ids'] ?? []), array_map('intval', $storeSelection['value_ids'] ?? []))) {
+                throw ValidationException::withMessages(['attributes' => ['Choose only filters and values selected in the store profile.']]);
+            }
+            $attribute = Attribute::find($selection['attribute_id'] ?? null);
+            if (!$attribute || !in_array((int) $attribute->category_id, $categoryIds, true)
+                || ($attribute->subcategory_id && !in_array((int) $attribute->subcategory_id, $subcategoryIds, true))
+                || $attribute->values()->whereIn('id', $selection['value_ids'] ?? [])->count() !== count(array_unique($selection['value_ids'] ?? []))) {
+                throw ValidationException::withMessages(['attributes' => ['Choose filters and values belonging to the selected subcategories.']]);
+            }
+        }
+        $branchAssignment = $this->resolveOfferBranchAssignment($store, $extra['branch_ids'] ?? ($offer?->branch_ids ?? []));
+        if (!$isAdmin && $offer && collect($branchAssignment['branch_ids'])->sort()->values()->all() === collect($offer->branch_ids ?? [])->map(fn ($id) => (int) $id)->sort()->values()->all()) {
+            $branchAssignment = array_merge($branchAssignment, [
+                'branch_assignment_status' => $offer->branch_assignment_status,
+                'branch_requested_by' => $offer->branch_requested_by,
+                'branch_approved_by' => $offer->branch_approved_by,
+                'branch_approved_at' => $offer->branch_approved_at,
+            ]);
+        }
+        if ($isAdmin) {
+            $branchAssignment = array_merge($branchAssignment, [
+                'branch_assignment_status' => 'approved', 'branch_requested_by' => $actor->id,
+                'branch_approved_by' => $actor->id, 'branch_approved_at' => now(),
+            ]);
+        }
+        $request->merge(['category_id' => $categoryIds[0] ?? null]);
 
-        // Keep the offer aligned with the store profile instead of an offer-level choice.
-        $data['area_id'] = $request->user()->area_id;
-
-        if (array_key_exists('images', $data)) {
-            $data['images'] = $this->toArrayField($data['images']);
-        }
-        if (array_key_exists('gallery_sort_order', $data)) {
-            $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
-            $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
-        }
-        if (array_key_exists('videos', $data)) {
-            $data['videos'] = $this->toArrayField($data['videos']);
-        }
-        if (array_key_exists('attributes', $data)) {
-            $data['attributes'] = $this->normalizeAttributes($data['attributes']);
-        }
-        if (array_key_exists('category_ids', $data)) {
-            $data['category_ids'] = array_values($data['category_ids']);
-            $data['category_id'] = $data['category_ids'][0] ?? null;
-        }
-        if (array_key_exists('subcategory_ids', $data)) {
-            $data['subcategory_ids'] = array_values($data['subcategory_ids']);
-            $data['subcategory_id'] = $data['subcategory_ids'][0] ?? null;
-        }
-        if (array_key_exists('branch_ids', $data)) {
-            $data = array_merge($data, $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids']));
-        }
-
-        $offer->update($data + ['updated_by' => $request->user()->id]);
-        return response()->json(['success' => true, 'offer' => $offer->fresh()]);
+        return DB::transaction(function () use ($request, $offer, $extra, $categoryIds, $subcategoryIds, $branchAssignment, $store, $isAdmin) {
+            // Keep the existing scheduling, media, ordering and lifecycle handling for both callers.
+            $writer = app(AdminController::class);
+            $response = $offer ? $writer->updateOffer($request, $offer) : $writer->storeOffer($request);
+            $saved = Offer::findOrFail($response->getData(true)['offer']['id']);
+            $saved->update(array_merge($branchAssignment, [
+                'category_ids' => $categoryIds, 'subcategory_ids' => $subcategoryIds,
+                'subcategory_id' => $subcategoryIds[0] ?? null,
+            ]));
+            $post = StorePost::where('type', 'offer')->where('source_id', $saved->id)->first();
+            if ($post || $isAdmin || $request->boolean('create_post')) {
+                $media = collect([$saved->thumbnail, $saved->cover])->merge($saved->images ?? [])->filter()->unique()
+                    ->map(fn ($url) => ['url' => $url, 'type' => 'image', 'caption' => null])
+                    ->merge(collect($saved->videos ?? [])->filter()->unique()->map(fn ($url) => ['url' => $url, 'type' => 'video', 'caption' => null]))->values()->all();
+                $pinned = $extra['is_pinned'] ?? $post?->is_pinned ?? false;
+                $pinOrder = $pinned ? ($post?->pin_order ?? ((int) StorePost::where('organization_id', $store->id)->max('pin_order') + 1)) : null;
+                $post = StorePost::updateOrCreate(['type' => 'offer', 'source_id' => $saved->id], [
+                    'organization_id' => $store->id, 'title' => $saved->name,
+                    'description' => $saved->details, 'image' => $saved->thumbnail ?: $saved->cover,
+                    'media' => $media, 'is_pinned' => $pinned, 'pin_order' => $pinOrder,
+                ]);
+            }
+            return response()->json(['success' => true, 'offer' => $saved->fresh(), 'post' => $post], $offer ? 200 : 201);
+        });
     }
 
     public function deleteOffer(Request $request, Offer $offer)
