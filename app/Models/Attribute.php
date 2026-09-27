@@ -11,6 +11,8 @@ class Attribute extends BaseModel
     protected $fillable = [
         'name',
         'type',
+        'category_ids',
+        'subcategory_ids',
         'category_id',
         'subcategory_id',
         'start_date',
@@ -21,6 +23,8 @@ class Attribute extends BaseModel
     ];
 
     protected $casts = [
+        'category_ids' => 'array',
+        'subcategory_ids' => 'array',
         'start_date' => 'date',
         'end_date' => 'date',
         'auto_expires' => 'boolean',

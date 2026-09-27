@@ -571,10 +571,12 @@ class OrganizationController extends Controller
             $query->where('type', $request->query('type'));
         }
         if ($request->filled('category_id')) {
-            $query->where('category_id', $request->query('category_id'));
+            $query->where(fn ($q) => $q->where('category_id', $request->query('category_id'))
+                ->orWhereJsonContains('category_ids', (int) $request->query('category_id')));
         }
         if ($request->filled('subcategory_id')) {
-            $query->where('subcategory_id', $request->query('subcategory_id'));
+            $query->where(fn ($q) => $q->where('subcategory_id', $request->query('subcategory_id'))
+                ->orWhereJsonContains('subcategory_ids', (int) $request->query('subcategory_id')));
         }
 
         $attributes = $query
@@ -938,8 +940,8 @@ class OrganizationController extends Controller
                 throw ValidationException::withMessages(['attributes' => ['Choose only filters and values selected in the store profile.']]);
             }
             $attribute = Attribute::find($selection['attribute_id'] ?? null);
-            if (!$attribute || !in_array((int) $attribute->category_id, $categoryIds, true)
-                || ($attribute->subcategory_id && !in_array((int) $attribute->subcategory_id, $subcategoryIds, true))
+            if (!$attribute || !array_intersect($attribute->category_ids ?? [$attribute->category_id], $categoryIds)
+                || (($attribute->subcategory_ids ?? array_filter([$attribute->subcategory_id])) && !array_intersect($attribute->subcategory_ids ?? [$attribute->subcategory_id], $subcategoryIds))
                 || $attribute->values()->whereIn('id', $selection['value_ids'] ?? [])->count() !== count(array_unique($selection['value_ids'] ?? []))) {
                 throw ValidationException::withMessages(['attributes' => ['Choose filters and values belonging to the selected subcategories.']]);
             }

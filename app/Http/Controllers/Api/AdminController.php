@@ -3244,10 +3244,12 @@ class AdminController extends Controller
             $query->where('type', $request->query('type'));
         }
         if ($request->filled('category_id')) {
-            $query->where('category_id', $request->query('category_id'));
+            $query->where(fn ($q) => $q->where('category_id', $request->query('category_id'))
+                ->orWhereJsonContains('category_ids', (int) $request->query('category_id')));
         }
         if ($request->filled('subcategory_id')) {
-            $query->where('subcategory_id', $request->query('subcategory_id'));
+            $query->where(fn ($q) => $q->where('subcategory_id', $request->query('subcategory_id'))
+                ->orWhereJsonContains('subcategory_ids', (int) $request->query('subcategory_id')));
         }
         if ($request->query('status')) {
             $status = $this->normalizeAttributeStatus($request->query('status'));
@@ -3268,19 +3270,36 @@ class AdminController extends Controller
         ]);
     }
 
+    private function normalizeAttributeCategories(array $data, ?Attribute $attribute = null): array
+    {
+        $categories = array_map('intval', $data['category_ids'] ?? (array_key_exists('category_id', $data)
+            ? array_values(array_filter([$data['category_id']]))
+            : ($attribute?->category_ids ?? array_values(array_filter([$attribute?->category_id])))));
+        $subcategories = array_map('intval', $data['subcategory_ids'] ?? (array_key_exists('subcategory_id', $data)
+            ? array_values(array_filter([$data['subcategory_id']]))
+            : ($attribute?->subcategory_ids ?? array_values(array_filter([$attribute?->subcategory_id])))));
+        if (Category::whereIn('id', $subcategories)->whereIn('parent_id', $categories)->count() !== count($subcategories)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'subcategory_ids' => ['Choose subcategories belonging to the selected categories.'],
+            ]);
+        }
+        return array_merge($data, [
+            'category_ids' => $categories, 'subcategory_ids' => $subcategories,
+            'category_id' => $categories[0] ?? null, 'subcategory_id' => $subcategories[0] ?? null,
+        ]);
+    }
+
     public function storeAttribute(Request $request)
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['event', 'offer'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
-            'subcategory_id' => [
-                'nullable',
-                'integer',
-                Rule::exists('categories', 'id')->where(
-                    fn ($query) => $query->where('parent_id', $request->input('category_id'))
-                ),
-            ],
+            'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'category_ids' => ['sometimes', 'array'],
+            'category_ids.*' => ['integer', 'distinct', Rule::exists('categories', 'id')->whereNull('parent_id')],
+            'subcategory_ids' => ['sometimes', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'auto_expires' => ['nullable', 'boolean'],
@@ -3288,6 +3307,8 @@ class AdminController extends Controller
             'status' => ['nullable', Rule::in(['published', 'draft', 'expired'])],
             'values' => ['nullable', 'array'],
         ]);
+
+        $data = $this->normalizeAttributeCategories($data);
 
         return DB::transaction(function () use ($data) {
             $status = $this->resolveAttributeStatusForSave(
@@ -3301,6 +3322,8 @@ class AdminController extends Controller
             $attribute = Attribute::create([
                 'name' => $data['name'],
                 'type' => $type,
+                'category_ids' => $data['category_ids'],
+                'subcategory_ids' => $data['subcategory_ids'],
                 'category_id' => $categoryId,
                 'subcategory_id' => $subcategoryId,
                 'start_date' => $data['start_date'],
@@ -3334,13 +3357,11 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'type' => ['sometimes', Rule::in(['event', 'offer'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
-            'subcategory_id' => [
-                'nullable',
-                'integer',
-                Rule::exists('categories', 'id')->where(
-                    fn ($query) => $query->where('parent_id', $request->input('category_id', $attribute->category_id))
-                ),
-            ],
+            'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'category_ids' => ['sometimes', 'array'],
+            'category_ids.*' => ['integer', 'distinct', Rule::exists('categories', 'id')->whereNull('parent_id')],
+            'subcategory_ids' => ['sometimes', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'auto_expires' => ['nullable', 'boolean'],
@@ -3348,6 +3369,8 @@ class AdminController extends Controller
             'status' => ['sometimes', Rule::in(['published', 'draft', 'expired'])],
             'values' => ['nullable', 'array'],
         ]);
+
+        $data = $this->normalizeAttributeCategories($data, $attribute);
 
         return DB::transaction(function () use ($data, $attribute) {
             if (array_key_exists('name', $data)) {
@@ -3378,6 +3401,8 @@ class AdminController extends Controller
                     (bool) $attribute->auto_expires
                 );
             }
+            $attribute->category_ids = $data['category_ids'];
+            $attribute->subcategory_ids = $data['subcategory_ids'];
             $attribute->save();
 
             if (array_key_exists('values', $data)) {

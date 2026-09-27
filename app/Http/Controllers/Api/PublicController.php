@@ -2076,10 +2076,12 @@ class PublicController extends Controller
             $query->where('type', $request->query('type'));
         }
         if ($request->filled('category_id')) {
-            $query->where('category_id', $request->query('category_id'));
+            $query->where(fn ($q) => $q->where('category_id', $request->query('category_id'))
+                ->orWhereJsonContains('category_ids', (int) $request->query('category_id')));
         }
         if ($request->filled('subcategory_id')) {
-            $query->where('subcategory_id', $request->query('subcategory_id'));
+            $query->where(fn ($q) => $q->where('subcategory_id', $request->query('subcategory_id'))
+                ->orWhereJsonContains('subcategory_ids', (int) $request->query('subcategory_id')));
         }
 
         $attributes = $query
