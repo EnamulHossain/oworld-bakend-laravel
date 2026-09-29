@@ -235,8 +235,23 @@ class OrganizationController extends Controller
         ]);
     }
 
-    public function updateProfile(Request $request)
+    private function authorizeStoreProfile(Request $request, User $user): void
     {
+        abort_unless($user->role === 'organization', 404);
+        abort_unless((string) $request->user()->id === (string) $user->id
+            || in_array(strtolower((string) $request->user()->role), ['admin', 'superadmin'], true), 403);
+    }
+
+    public function showStoreProfile(Request $request, User $user)
+    {
+        $this->authorizeStoreProfile($request, $user);
+        return response()->json(['success' => true, 'profile' => $this->formatOrganizationProfile($user)]);
+    }
+
+    public function updateProfile(Request $request, ?User $user = null)
+    {
+        $user = $user ?? $request->user();
+        $this->authorizeStoreProfile($request, $user);
         $data = $request->validate([
             'organization_name' => ['nullable', 'string', 'max:255'],
             'business_type' => ['nullable', 'string', 'max:100'],
@@ -321,12 +336,19 @@ class OrganizationController extends Controller
             'catalog_items.*.media.*.type' => ['required', Rule::in(['image', 'video'])],
         ]);
 
-        $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids'] ?? array_filter([$data['subcategory_id'] ?? null]))));
-        if (!empty($subcategoryIds)) {
-            $categoryNames = array_values(array_filter(array_map(fn ($name) => Str::lower(trim((string) $name)), $data['categories'] ?? [])));
+        $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids']
+            ?? (array_key_exists('subcategory_id', $data) ? array_filter([$data['subcategory_id']])
+                : ($user->subcategory_ids ?? array_filter([$user->subcategory_id]))))));
+        $classificationChanged = array_map('strval', $data['categories'] ?? $user->categories ?? []) !== array_map('strval', $user->categories ?? [])
+            || $subcategoryIds !== array_map('intval', $user->subcategory_ids ?? []);
+        if (!empty($subcategoryIds) && $classificationChanged) {
+            $categoryNames = array_values(array_filter(array_map(fn ($name) => Str::lower(trim((string) $name)), $data['categories'] ?? $user->categories ?? [])));
             $valid = !empty($categoryNames) && Category::query()
                 ->whereKey($subcategoryIds)
-                ->whereHas('parent', fn ($query) => $query->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(name))'), $categoryNames))
+                ->whereHas('parent', fn ($query) => $query->where(function ($query) use ($categoryNames) {
+                    $query->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(name))'), $categoryNames)
+                        ->orWhereIn('id', array_values(array_filter($categoryNames, 'ctype_digit')));
+                }))
                 ->count() === count($subcategoryIds);
             if (!$valid) {
                 throw ValidationException::withMessages([
@@ -344,14 +366,14 @@ class OrganizationController extends Controller
             $data['store_filters'] = $this->normalizeAttributes($data['store_filters']);
         }
 
-        $request->user()->update($data);
+        $user->update($data);
         if (array_key_exists('area_id', $data)) {
-            Offer::where('organization_id', $request->user()->id)->update(['area_id' => $data['area_id']]);
+            Offer::where('organization_id', $user->id)->update(['area_id' => $data['area_id']]);
         }
 
         return response()->json([
             'success' => true,
-            'profile' => $this->formatOrganizationProfile($request->user()->fresh()),
+            'profile' => $this->formatOrganizationProfile($user->fresh()),
         ]);
     }
 
@@ -924,8 +946,11 @@ class OrganizationController extends Controller
         ]);
         $categoryIds = array_map('intval', $extra['category_ids'] ?? ($request->has('category_id') ? array_filter([$request->input('category_id')]) : ($offer?->category_ids ?: array_filter([$offer?->category_id]))));
         $subcategoryIds = array_map('intval', $extra['subcategory_ids'] ?? ($request->has('subcategory_id') ? array_filter([$request->input('subcategory_id')]) : ($offer?->subcategory_ids ?: array_filter([$offer?->subcategory_id]))));
+        $storeCategories = array_map('strval', $store->categories ?? []);
         $allowedCategoryIds = Category::whereNull('parent_id')->where('status', 'active')
-            ->whereIn('name', $store->categories ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all();
+            ->where(fn ($query) => $query->whereIn('name', $storeCategories)
+                ->orWhereIn('id', array_values(array_filter($storeCategories, 'ctype_digit'))))
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
         $allowedSubcategoryIds = array_map('intval', $store->subcategory_ids ?? array_filter([$store->subcategory_id]));
         if (array_diff($categoryIds, $allowedCategoryIds)) {
             throw ValidationException::withMessages(['category_ids' => ['Choose categories assigned to this store in About.']]);

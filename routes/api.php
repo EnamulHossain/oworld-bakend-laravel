@@ -48,6 +48,8 @@ Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHigh
 Route::get('public/store-posts/{post}/comments', [StorePostInteractionController::class, 'comments']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('store-profiles/{user}', [OrganizationController::class, 'showStoreProfile']);
+    Route::put('store-profiles/{user}', [OrganizationController::class, 'updateProfile']);
     Route::get('profile', [UserProfileController::class, 'show']);
     Route::get('profile/coupons', [UserProfileController::class, 'coupons']);
     Route::match(['put', 'patch'], 'profile', [UserProfileController::class, 'update']);

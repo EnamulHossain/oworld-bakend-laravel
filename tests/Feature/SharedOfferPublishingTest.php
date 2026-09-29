@@ -38,6 +38,35 @@ class SharedOfferPublishingTest extends TestCase
         return User::create(['role' => 'organization', 'username' => 'store', 'organization_name' => 'Store', 'categories' => [], 'subcategory_ids' => []]);
     }
 
+    public function test_offer_accepts_store_categories_saved_as_ids_or_names(): void
+    {
+        $admin = User::create(['role' => 'admin']);
+        $category = Category::create(['name' => 'Food', 'status' => 'active']);
+        $subcategory = Category::create(['name' => 'Cafe', 'status' => 'active', 'parent_id' => $category->id]);
+        foreach ([$category->id, (string) $category->id, $category->name] as $storedCategory) {
+            $store = $this->store();
+            $store->update(['categories' => [$storedCategory], 'subcategory_ids' => [$subcategory->id]]);
+            $response = app(OrganizationController::class)->storeOffer($this->request($admin, array_merge($this->payload($store), [
+                'category_ids' => [$category->id], 'subcategory_ids' => [$subcategory->id],
+            ])));
+            $this->assertLessThan(300, $response->getStatusCode());
+            $this->assertSame([$category->id], Offer::where('organization_id', $store->id)->firstOrFail()->category_ids);
+        }
+    }
+
+    public function test_offer_rejects_categories_not_assigned_to_store(): void
+    {
+        $store = $this->store();
+        $category = Category::create(['name' => 'Food', 'status' => 'active']);
+        try {
+            app(OrganizationController::class)->storeOffer($this->request($store, array_merge($this->payload($store), ['category_ids' => [$category->id]])));
+            $this->fail('Unassigned category accepted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('category_ids', $exception->errors());
+            $this->assertSame(0, Offer::count());
+        }
+    }
+
     private function request(User $actor, array $data): Request
     {
         $request = Request::create('/api/offers', 'POST', $data);

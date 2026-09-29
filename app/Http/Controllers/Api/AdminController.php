@@ -4176,16 +4176,20 @@ class AdminController extends Controller
     {
         if (empty($data['subcategory_ids'])) return;
 
-        $categoryName = trim((string) ($data['categories'][0] ?? ''));
+        $categoryValues = array_map(fn ($value) => Str::lower(trim((string) $value)), $data['categories'] ?? []);
+        $categoryIds = Category::whereNull('parent_id')->get(['id', 'name'])
+            ->filter(fn ($category) => in_array((string) $category->id, $categoryValues, true)
+                || in_array(Str::lower(trim($category->name)), $categoryValues, true))
+            ->pluck('id');
         $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids'])));
-        $valid = $categoryName !== '' && Category::query()
+        $valid = $categoryIds->isNotEmpty() && Category::query()
             ->whereKey($subcategoryIds)
-            ->whereHas('parent', fn ($query) => $query->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($categoryName)]))
+            ->whereIn('parent_id', $categoryIds)
             ->count() === count($subcategoryIds);
 
         if (!$valid) {
             throw ValidationException::withMessages([
-                'subcategory_ids' => ['Select valid subcategories for the selected category.'],
+                'subcategory_ids' => ['Select valid subcategories for the selected categories.'],
             ]);
         }
     }

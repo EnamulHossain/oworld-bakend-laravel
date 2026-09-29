@@ -1218,9 +1218,15 @@ class PublicController extends Controller
         $offset = max((int) $request->query('offset', 0), 0);
         $q = trim((string) $request->query('q', ''));
         $area = trim((string) $request->query('area', ''));
+        $areaIds = array_values(array_filter(array_map('intval', (array) $request->query('area_ids', [])), fn ($id) => $id > 0));
         $category = trim((string) $request->query('category', ''));
         $subcategoryId = (int) $request->query('subcategory_id', 0);
         $categoryId = (int) $request->query('category_id', 0);
+        $categoryRecord = $categoryId > 0
+            ? Category::find($categoryId)
+            : ($category !== '' ? Category::where('name', $category)->first() : null);
+        $categoryName = $categoryRecord?->name ?? $category;
+        $resolvedCategoryId = $categoryRecord?->id ?? ($categoryId > 0 ? $categoryId : null);
         $attributeFilters = collect((array) $request->query('attributes', []))
             ->map(fn ($values) => array_values(array_unique(array_filter(array_map('intval', (array) $values)))))
             ->filter(fn ($values) => $values !== []);
@@ -1251,8 +1257,15 @@ class PublicController extends Controller
                     $inner->where('address', 'like', "%{$area}%");
                 });
             })
-            ->when($category !== '', function ($builder) use ($category) {
-                $builder->whereJsonContains('categories', $category);
+            ->when($areaIds !== [], fn ($builder) => $builder->whereIn('area_id', $areaIds))
+            ->when($categoryName !== '' || $resolvedCategoryId !== null, function ($builder) use ($categoryName, $resolvedCategoryId) {
+                $builder->where(function ($inner) use ($categoryName, $resolvedCategoryId) {
+                    $inner->whereJsonContains('categories', $categoryName);
+                    if ($resolvedCategoryId !== null) {
+                        $inner->orWhereJsonContains('categories', (int) $resolvedCategoryId)
+                            ->orWhereJsonContains('categories', (string) $resolvedCategoryId);
+                    }
+                });
             })
             ->when($subcategoryId > 0, function ($builder) use ($subcategoryId) {
                 $builder->where(function ($inner) use ($subcategoryId) {
