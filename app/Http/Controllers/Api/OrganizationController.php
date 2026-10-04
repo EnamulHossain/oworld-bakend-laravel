@@ -336,6 +336,10 @@ class OrganizationController extends Controller
             'catalog_items.*.media.*.type' => ['required', Rule::in(['image', 'video'])],
         ]);
 
+        if (isset($data['categories'])) {
+            $data['categories'] = array_map(fn ($value) => ctype_digit((string) $value) ? (int) $value : $value, $data['categories']);
+        }
+
         $subcategoryIds = array_values(array_unique(array_map('intval', $data['subcategory_ids']
             ?? (array_key_exists('subcategory_id', $data) ? array_filter([$data['subcategory_id']])
                 : ($user->subcategory_ids ?? array_filter([$user->subcategory_id]))))));

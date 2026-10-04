@@ -60,7 +60,7 @@ class AuthController extends Controller
             'referral_code' => ['nullable', 'string', 'max:32'],
             'organization_name' => ['nullable', 'string', 'max:255'],
             'categories' => ['nullable', 'array', 'max:20'],
-            'categories.*' => ['string', 'distinct', 'max:100'],
+            'categories.*' => ['integer', 'distinct', 'exists:categories,id'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['required', 'string', 'max:16'],
             'terms_accepted' => ['nullable', 'boolean'],
@@ -84,7 +84,7 @@ class AuthController extends Controller
             $request->validate([
                 'organization_name' => ['required', 'string', 'max:255'],
                 'categories' => ['required', 'array', 'min:1', 'max:20'],
-                'categories.*' => ['required', 'string', 'max:100'],
+                'categories.*' => ['required', 'integer', 'exists:categories,id'],
                 'phone' => ['required', 'string', 'regex:/^\+8801[3-9]\d{8}$/'],
                 'terms_accepted' => ['accepted'],
             ]);
@@ -125,6 +125,10 @@ class AuthController extends Controller
             ], 422);
         }
 
+        if (isset($data['categories'])) {
+            $data['categories'] = array_map('intval', $data['categories']);
+        }
+
         $user = DB::transaction(function () use ($data, $role, $referrer) {
             $user = User::create([
                 'username' => $data['username'],
@@ -153,10 +157,7 @@ class AuthController extends Controller
             }
 
             if ($role === 'organization') {
-                $categoryName = $data['categories'][0] ?? null;
-                $categoryId = $categoryName
-                    ? Category::whereRaw('LOWER(TRIM(name)) = ?', [Str::lower(trim($categoryName))])->value('id')
-                    : null;
+                $categoryId = $data['categories'][0] ?? null;
 
                 Organization::updateOrCreate(
                     ['user_id' => $user->id],
