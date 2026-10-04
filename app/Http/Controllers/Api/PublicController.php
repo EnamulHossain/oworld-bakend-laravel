@@ -1214,6 +1214,7 @@ class PublicController extends Controller
 
     public function organizations(Request $request)
     {
+        $this->syncOfferAndEventLifecycle();
         $limit = min((int) $request->query('limit', 20), 100);
         $offset = max((int) $request->query('offset', 0), 0);
         $q = trim((string) $request->query('q', ''));
@@ -1304,7 +1305,32 @@ class PublicController extends Controller
         }
 
         $total = (clone $query)->count();
-        $organizations = $query->skip($offset)->limit($limit)->get()->map(fn ($organization) => $this->formatPublicOrganization($organization));
+        $records = $query->skip($offset)->limit($limit)
+            ->withCount(['organizationEvents as public_events_count' => fn ($events) => $events->whereIn('status', ['published', 'active'])])
+            ->get();
+        $storeIds = $records->pluck('id')->all();
+        $offerStoreIds = [];
+        if ($storeIds !== []) {
+            $offers = Offer::query()
+                ->where('branch_assignment_status', 'approved')
+                ->whereIn('status', ['published', 'active'])
+                ->where(function ($offers) use ($storeIds) {
+                    $offers->whereIn('organization_id', $storeIds);
+                    foreach ($storeIds as $storeId) {
+                        $offers->orWhereJsonContains('branch_ids', (int) $storeId);
+                    }
+                })->get(['organization_id', 'branch_ids']);
+            foreach ($offers as $offer) {
+                $offerStoreIds[(int) $offer->organization_id] = true;
+                foreach ($offer->branch_ids ?? [] as $branchId) {
+                    $offerStoreIds[(int) $branchId] = true;
+                }
+            }
+        }
+        $organizations = $records->map(fn ($organization) => array_merge($this->formatPublicOrganization($organization), [
+            'has_offers' => isset($offerStoreIds[(int) $organization->id]),
+            'has_events' => $organization->public_events_count > 0,
+        ]));
 
         return response()->json([
             'success' => true,
