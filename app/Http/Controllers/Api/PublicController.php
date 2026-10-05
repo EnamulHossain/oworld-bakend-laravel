@@ -1241,8 +1241,7 @@ class PublicController extends Controller
                         ->where('is_verified', true);
                 })->orWhereHas('organization', function ($organizationQuery) {
                     $organizationQuery->where('status', 'active')
-                        ->where('verification_status', 'approved')
-                        ->where('is_verified', true);
+                        ->where('verification_status', 'approved');
                 });
             })
             ->when($q !== '', function ($builder) use ($q) {
