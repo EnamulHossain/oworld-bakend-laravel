@@ -62,6 +62,58 @@ class AttributeCategoriesTest extends TestCase
         ]));
     }
 
+    public function test_store_filters_can_be_created_listed_and_updated(): void
+    {
+        $controller = app(AdminController::class);
+        $response = $controller->storeAttribute(Request::create('/', 'POST', [
+            'name' => 'Store facilities', 'type' => 'store', 'start_date' => '2020-01-01',
+            'values' => [['value' => 'Parking']],
+        ]));
+        $this->assertSame(201, $response->getStatusCode());
+        $attribute = Attribute::firstOrFail();
+        $this->assertSame('store', $attribute->type);
+        $this->assertSame('Parking', $attribute->values()->firstOrFail()->value);
+        $result = $controller->listAttributes(Request::create('/', 'GET', ['type' => 'store']));
+        $this->assertCount(1, $result->getData(true)['attributes']);
+        $controller->updateAttribute(Request::create('/', 'PUT', [
+            'name' => 'Store amenities', 'type' => 'store', 'start_date' => '2020-01-01',
+        ]), $attribute);
+        $this->assertSame('Store amenities', $attribute->fresh()->name);
+        $this->assertSame('store', $attribute->fresh()->type);
+    }
+
+    public function test_multiple_types_share_one_filter_and_can_be_updated(): void
+    {
+        $controller = app(AdminController::class);
+        $response = $controller->storeAttribute(Request::create('/', 'POST', [
+            'name' => 'Shared type filter', 'types' => ['event', 'offer', 'store'],
+            'start_date' => '2020-01-01', 'values' => [['value' => 'Yes']],
+        ]));
+        $this->assertSame(201, $response->getStatusCode());
+        $attribute = Attribute::firstOrFail();
+        $this->assertSame(['event', 'offer', 'store'], $attribute->types);
+        foreach (['event', 'offer', 'store'] as $type) {
+            foreach ([AdminController::class => 'listAttributes', PublicController::class => 'attributes', OrganizationController::class => 'attributes'] as $class => $method) {
+                $result = app($class)->$method(Request::create('/', 'GET', ['type' => $type]));
+                $this->assertCount(1, $result->getData(true)['attributes']);
+            }
+        }
+        $controller->updateAttribute(Request::create('/', 'PUT', [
+            'types' => ['store'], 'start_date' => '2020-01-01',
+        ]), $attribute);
+        $this->assertSame(['store'], $attribute->fresh()->types);
+        $this->assertSame(0, Attribute::forType('offer')->count());
+        $this->assertSame(1, Attribute::forType('store')->count());
+    }
+
+    public function test_empty_type_selection_is_rejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        app(AdminController::class)->storeAttribute(Request::create('/', 'POST', [
+            'name' => 'Empty types', 'types' => [], 'start_date' => '2020-01-01',
+        ]));
+    }
+
     public function test_legacy_single_assignment_remains_supported(): void
     {
         $category = Category::create(['name' => 'Legacy']);

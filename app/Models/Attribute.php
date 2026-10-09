@@ -11,6 +11,7 @@ class Attribute extends BaseModel
     protected $fillable = [
         'name',
         'type',
+        'types',
         'category_ids',
         'subcategory_ids',
         'category_id',
@@ -23,12 +24,19 @@ class Attribute extends BaseModel
     ];
 
     protected $casts = [
+        'types' => 'array',
         'category_ids' => 'array',
         'subcategory_ids' => 'array',
         'start_date' => 'date',
         'end_date' => 'date',
         'auto_expires' => 'boolean',
     ];
+
+    public function scopeForType($query, string $type)
+    {
+        return $query->where(fn ($q) => $q->whereJsonContains('types', $type)
+            ->orWhere(fn ($legacy) => $legacy->whereNull('types')->where('type', $type)));
+    }
 
     public function values()
     {

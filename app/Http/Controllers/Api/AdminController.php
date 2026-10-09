@@ -3241,7 +3241,7 @@ class AdminController extends Controller
         }
 
         if ($request->query('type')) {
-            $query->where('type', $request->query('type'));
+            $query->forType($request->query('type'));
         }
         if ($request->filled('category_id')) {
             $query->where(fn ($q) => $q->where('category_id', $request->query('category_id'))
@@ -3293,7 +3293,9 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'type' => ['required', Rule::in(['event', 'offer'])],
+            'type' => ['required_without:types', Rule::in(['event', 'offer', 'store'])],
+            'types' => ['sometimes', 'array', 'min:1'],
+            'types.*' => ['required', 'distinct', Rule::in(['event', 'offer', 'store'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
             'category_ids' => ['sometimes', 'array'],
@@ -3316,12 +3318,14 @@ class AdminController extends Controller
                 $data['end_date'] ?? null,
                 (bool) ($data['auto_expires'] ?? true)
             );
-            $type = $data['type'];
+            $types = $data['types'] ?? [$data['type']];
+            $type = $types[0];
             $categoryId = $data['category_id'] ?? null;
             $subcategoryId = $categoryId ? ($data['subcategory_id'] ?? null) : null;
             $attribute = Attribute::create([
                 'name' => $data['name'],
                 'type' => $type,
+                'types' => $types,
                 'category_ids' => $data['category_ids'],
                 'subcategory_ids' => $data['subcategory_ids'],
                 'category_id' => $categoryId,
@@ -3355,7 +3359,9 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'type' => ['sometimes', Rule::in(['event', 'offer'])],
+            'type' => ['sometimes', Rule::in(['event', 'offer', 'store'])],
+            'types' => ['sometimes', 'array', 'min:1'],
+            'types.*' => ['required', 'distinct', Rule::in(['event', 'offer', 'store'])],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'subcategory_id' => ['nullable', 'integer', 'exists:categories,id'],
             'category_ids' => ['sometimes', 'array'],
@@ -3376,8 +3382,9 @@ class AdminController extends Controller
             if (array_key_exists('name', $data)) {
                 $attribute->name = $data['name'];
             }
-            if (array_key_exists('type', $data)) {
-                $attribute->type = $data['type'];
+            if (array_key_exists('types', $data) || array_key_exists('type', $data)) {
+                $attribute->types = $data['types'] ?? [$data['type']];
+                $attribute->type = $attribute->types[0];
             }
             if (array_key_exists('category_id', $data)) {
                 $attribute->category_id = $data['category_id'];

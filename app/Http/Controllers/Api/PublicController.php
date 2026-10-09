@@ -2111,7 +2111,7 @@ class PublicController extends Controller
             $query->where('name', 'like', "%{$term}%");
         }
         if ($request->query('type')) {
-            $query->where('type', $request->query('type'));
+            $query->forType($request->query('type'));
         }
         if ($request->filled('category_id')) {
             $query->where(fn ($q) => $q->where('category_id', $request->query('category_id'))
