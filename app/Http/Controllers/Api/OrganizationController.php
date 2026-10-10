@@ -567,10 +567,10 @@ class OrganizationController extends Controller
     {
         $categories = Category::query()
             ->where('status', 'active')
-            ->when($request->query('type') === 'event', fn ($query) => $query->where('is_event_category', true))
+            ->when(in_array($request->query('type'), ['offer', 'event', 'store'], true), fn ($query) => $query->whereJsonContains('category_types', $request->query('type')))
             ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name', 'icon', 'is_event_category']);
+            ->get(['id', 'name', 'icon', 'is_event_category', 'category_types']);
 
         return response()->json(['success' => true, 'categories' => $categories]);
     }

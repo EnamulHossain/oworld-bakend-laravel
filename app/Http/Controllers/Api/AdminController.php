@@ -1032,7 +1032,7 @@ class AdminController extends Controller
             ->when($request->query('hierarchy') === 'subcategories', fn ($q) => $q->whereNotNull('parent_id'))
             ->when(!$request->has('hierarchy'), fn ($q) => $q->whereNull('parent_id'))
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
-            ->when($request->query('type') === 'event', fn ($q) => $q->where('is_event_category', true))
+            ->when(in_array($request->query('type'), ['offer', 'event', 'store'], true), fn ($q) => $q->whereJsonContains('category_types', $request->query('type')))
             ->when($request->query('search'), function ($q, $term) {
                 $q->where(function ($inner) use ($term) {
                     $inner->where('name', 'like', "%{$term}%")
@@ -1123,6 +1123,8 @@ class AdminController extends Controller
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'is_event_category' => ['nullable', 'boolean'],
+            'category_types' => ['sometimes', 'array', 'min:1'],
+            'category_types.*' => ['required', 'distinct', Rule::in(['offer', 'event', 'store'])],
             'description' => ['nullable', 'string'],
             'parent_id' => ['nullable', 'integer', 'exists:categories,id'],
         ]);
@@ -1131,6 +1133,9 @@ class AdminController extends Controller
         if (!is_array($gallerySortOrder)) {
             $gallerySortOrder = [];
         }
+
+        $data['category_types'] = $data['category_types'] ?? (!empty($data['is_event_category']) ? ['event'] : ['offer', 'store']);
+        $data['is_event_category'] = in_array('event', $data['category_types'], true);
 
         $category = Category::create($data + ['created_by' => $request->user()->id]);
         $category->update([
@@ -1175,6 +1180,8 @@ class AdminController extends Controller
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => ['nullable', Rule::in(['active', 'inactive', 'archived'])],
             'is_event_category' => ['nullable', 'boolean'],
+            'category_types' => ['sometimes', 'array', 'min:1'],
+            'category_types.*' => ['required', 'distinct', Rule::in(['offer', 'event', 'store'])],
             'description' => ['nullable', 'string'],
             'parent_id' => ['nullable', 'integer', 'exists:categories,id', Rule::notIn([$category->id])],
         ]);
@@ -1185,6 +1192,10 @@ class AdminController extends Controller
         if (array_key_exists('gallery_sort_order', $data)) {
             $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order']);
             $data['gallery_sort_order'] = is_array($gallerySortOrder) ? $gallerySortOrder : [];
+        }
+
+        if (array_key_exists('category_types', $data)) {
+            $data['is_event_category'] = in_array('event', $data['category_types'], true);
         }
 
         $category->update($data);

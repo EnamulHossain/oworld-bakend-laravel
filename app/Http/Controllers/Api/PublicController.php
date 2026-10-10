@@ -205,10 +205,10 @@ class PublicController extends Controller
                 ->select(['id', 'parent_id', 'name', 'short_name', 'image', 'icon', 'order'])])
             ->where('status', 'active')
             ->whereNull('parent_id')
-            ->when($request->query('type') === 'event', fn ($query) => $query->where('is_event_category', true))
+            ->when(in_array($request->query('type'), ['offer', 'event', 'store'], true), fn ($query) => $query->whereJsonContains('category_types', $request->query('type')))
             ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order', 'is_event_category']);
+            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order', 'is_event_category', 'category_types']);
 
         return response()->json([
             'success' => true,
