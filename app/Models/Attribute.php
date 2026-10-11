@@ -43,6 +43,22 @@ class Attribute extends BaseModel
         return $this->hasMany(AttributeValue::class);
     }
 
+    public function scopeMatchingCategory($query, int $id)
+    {
+        return $query->where(fn ($q) => $q->where('category_id', $id)
+            ->orWhereJsonContains('category_ids', $id)
+            ->orWhere(fn ($global) => $global->whereNull('category_id')
+                ->where(fn ($ids) => $ids->whereNull('category_ids')->orWhereJsonLength('category_ids', 0))));
+    }
+
+    public function scopeMatchingSubcategory($query, int $id)
+    {
+        return $query->where(fn ($q) => $q->where('subcategory_id', $id)
+            ->orWhereJsonContains('subcategory_ids', $id)
+            ->orWhere(fn ($global) => $global->whereNull('subcategory_id')
+                ->where(fn ($ids) => $ids->whereNull('subcategory_ids')->orWhereJsonLength('subcategory_ids', 0))));
+    }
+
     public function categories()
     {
         return $this->belongsToMany(Category::class, 'attribute_category')->withTimestamps();

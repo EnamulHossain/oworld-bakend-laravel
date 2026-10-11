@@ -50,6 +50,21 @@ class AttributeCategoriesTest extends TestCase
         $this->assertNull($attribute->fresh()->subcategory_id);
     }
 
+    public function test_global_filters_match_categories_but_unrelated_filters_do_not(): void
+    {
+        $global = Attribute::create(['name' => 'Global', 'type' => 'event', 'status' => 'published']);
+        $empty = Attribute::create(['name' => 'Empty', 'type' => 'event', 'status' => 'published', 'category_ids' => [], 'subcategory_ids' => []]);
+        $specific = Attribute::create(['name' => 'Specific', 'type' => 'event', 'status' => 'published', 'category_ids' => [10, 20], 'subcategory_ids' => [30, 40]]);
+        Attribute::create(['name' => 'Other', 'type' => 'event', 'status' => 'published', 'category_ids' => [99], 'subcategory_ids' => [98]]);
+        $expected = [$global->id, $empty->id, $specific->id];
+        foreach ([AdminController::class => 'listAttributes', PublicController::class => 'attributes', OrganizationController::class => 'attributes'] as $class => $method) {
+            $response = app($class)->$method(Request::create('/', 'GET', ['type' => 'event', 'category_id' => 20, 'subcategory_id' => 40]));
+            $ids = array_column($response->getData(true)['attributes'], 'id');
+            sort($ids);
+            $this->assertSame($expected, $ids);
+        }
+    }
+
     public function test_unrelated_subcategories_are_rejected(): void
     {
         $a = Category::create(['name' => 'A']);

@@ -1436,7 +1436,7 @@ class AdminController extends Controller
             'area_ids' => ['nullable', 'array'],
             'area_ids.*' => ['integer', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
-            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
+            'subcategory_id' => ['nullable', $request->has('subcategory_ids') ? Rule::exists('categories', 'id') : Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id')))],
             'organization_id' => ['nullable', 'exists:users,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'serial' => ['nullable', 'integer', 'min:0'],
@@ -1446,6 +1446,7 @@ class AdminController extends Controller
             $data['sort_order'] = $data['serial'];
         }
 
+        $data = $this->normalizeEventClassification($request, $data);
         $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
         $data = $this->normalizeExpirationFields($data);
@@ -1511,7 +1512,7 @@ class AdminController extends Controller
             'area_ids' => ['nullable', 'array'],
             'area_ids.*' => ['integer', 'exists:areas,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
-            'subcategory_id' => ['nullable', Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $event->category_id)))],
+            'subcategory_id' => ['nullable', $request->has('subcategory_ids') ? Rule::exists('categories', 'id') : Rule::exists('categories', 'id')->where(fn ($query) => $query->where('parent_id', $request->input('category_id', $event->category_id)))],
             'organization_id' => ['nullable', 'exists:users,id'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'serial' => ['nullable', 'integer', 'min:0'],
@@ -1521,6 +1522,7 @@ class AdminController extends Controller
             $data['sort_order'] = $data['serial'];
         }
 
+        $data = $this->normalizeEventClassification($request, $data, $event);
         $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
         $data = $this->normalizeExpirationFields($data, $event);
@@ -1561,6 +1563,32 @@ class AdminController extends Controller
         $this->syncOfferAndEventLifecycle(Event::class, [$event->id]);
         $event->refresh();
         return response()->json(['success' => true, 'event' => $event]);
+    }
+
+    private function normalizeEventClassification(Request $request, array $data, ?Event $event = null): array
+    {
+        $selection = $request->validate([
+            'category_ids' => ['sometimes', 'array'],
+            'category_ids.*' => ['integer', 'distinct', Rule::exists('categories', 'id')->whereNull('parent_id')],
+            'subcategory_ids' => ['sometimes', 'array'],
+            'subcategory_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+        ]);
+        if ($event && !$request->hasAny(['category_ids', 'subcategory_ids', 'category_id', 'subcategory_id'])) {
+            return $data;
+        }
+        $categoryIds = array_map('intval', $selection['category_ids'] ?? ($request->has('category_id')
+            ? array_values(array_filter([$data['category_id'] ?? null]))
+            : ($event?->category_ids ?: array_values(array_filter([$event?->category_id])))));
+        $subcategoryIds = array_map('intval', $selection['subcategory_ids'] ?? ($request->has('subcategory_id')
+            ? array_values(array_filter([$data['subcategory_id'] ?? null]))
+            : ($event?->subcategory_ids ?: array_values(array_filter([$event?->subcategory_id])))));
+        if (Category::whereIn('id', $subcategoryIds)->whereIn('parent_id', $categoryIds)->count() !== count($subcategoryIds)) {
+            throw ValidationException::withMessages([
+                'subcategory_ids' => ['Choose subcategories belonging to the selected categories.'],
+            ]);
+        }
+        return [...$data, 'category_ids' => $categoryIds, 'subcategory_ids' => $subcategoryIds,
+            'category_id' => $categoryIds[0] ?? null, 'subcategory_id' => $subcategoryIds[0] ?? null];
     }
 
     public function deleteEvent(Event $event)
@@ -3255,12 +3283,10 @@ class AdminController extends Controller
             $query->forType($request->query('type'));
         }
         if ($request->filled('category_id')) {
-            $query->where(fn ($q) => $q->where('category_id', $request->query('category_id'))
-                ->orWhereJsonContains('category_ids', (int) $request->query('category_id')));
+            $query->matchingCategory((int) $request->query('category_id'));
         }
         if ($request->filled('subcategory_id')) {
-            $query->where(fn ($q) => $q->where('subcategory_id', $request->query('subcategory_id'))
-                ->orWhereJsonContains('subcategory_ids', (int) $request->query('subcategory_id')));
+            $query->matchingSubcategory((int) $request->query('subcategory_id'));
         }
         if ($request->query('status')) {
             $status = $this->normalizeAttributeStatus($request->query('status'));
