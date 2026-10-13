@@ -199,13 +199,17 @@ class AdminController extends Controller
                 $q->where(function ($inner) use ($term) {
                     $inner->where('username', 'like', "%{$term}%")
                         ->orWhere('organization_name', 'like', "%{$term}%")
-                        ->orWhere('email', 'like', "%{$term}%");
+                        ->orWhere('email', 'like', "%{$term}%")
+                        ->orWhere('contact_email', 'like', "%{$term}%");
                 });
             });
 
         $sortColumns = ['organization_name', 'phone', 'email', 'username', 'created_at'];
         $sortBy = $request->query('sort_by');
-        if (in_array($sortBy, $sortColumns, true)) {
+        if ($sortBy === 'email') {
+            $direction = $request->query('sort_dir') === 'asc' ? 'asc' : 'desc';
+            $query->orderByRaw("COALESCE(NULLIF(contact_email, ''), email) {$direction}")->orderByDesc('id');
+        } elseif (in_array($sortBy, $sortColumns, true)) {
             $query->orderBy($sortBy, $request->query('sort_dir') === 'asc' ? 'asc' : 'desc')
                 ->orderByDesc('id');
         } else {
@@ -218,6 +222,7 @@ class AdminController extends Controller
                 'parent_org_id',
                 'username',
                 'email',
+                'contact_email',
                 'organization_name',
                 'business_type',
                 'is_verified',
@@ -4176,6 +4181,7 @@ class AdminController extends Controller
             'parent_org_id' => $user->parent_org_id,
             'username' => $user->username,
             'email' => $user->email,
+            'contact_email' => $user->contact_email,
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
