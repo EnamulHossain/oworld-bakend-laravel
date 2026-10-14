@@ -1583,6 +1583,23 @@ class PublicController extends Controller
 
     private function formatPublicOrganization(User $organization): array
     {
+        $this->expireAttributesIfNeeded();
+        $storeFilters = collect($organization->store_filters ?? []);
+        $publishedFilterIds = Attribute::query()
+            ->whereIn('id', $storeFilters->pluck('attribute_id'))
+            ->where('status', 'published')
+            ->where(function ($query) {
+                $query->whereNull('start_date')
+                    ->orWhereDate('start_date', '<=', now('Asia/Dhaka')->toDateString());
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+        $visibleStoreFilters = $storeFilters
+            ->filter(fn ($selection) => in_array((string) ($selection['attribute_id'] ?? ''), $publishedFilterIds, true))
+            ->values()
+            ->all();
+
         return [
             'id' => $organization->id,
             'parent_org_id' => $organization->parent_org_id,
@@ -1593,10 +1610,11 @@ class PublicController extends Controller
             'public_subcategory' => $organization->public_subcategory,
             'public_tag' => $organization->public_tag,
             'is_verified' => (bool) $organization->is_verified,
+            'ismanagedbyoworld' => (bool) $organization->ismanagedbyoworld,
             'categories' => $organization->categories ?? [],
             'subcategory_id' => $organization->subcategory_id,
             'subcategory_ids' => $organization->subcategory_ids ?? [],
-            'store_filters' => $organization->store_filters ?? [],
+            'store_filters' => $visibleStoreFilters,
             'about' => $organization->about,
             'store_tags' => $organization->store_tags ?? [],
             'phone' => $organization->phone,

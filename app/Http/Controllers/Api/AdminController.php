@@ -19,6 +19,7 @@ use App\Models\Offer;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\StorePost;
+use App\Services\StoreEventFilterSync;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -3384,6 +3385,10 @@ class AdminController extends Controller
                 $attribute->values()->createMany($values);
             }
 
+            if (in_array('event', $attribute->types ?? [$attribute->type], true)) {
+                app(StoreEventFilterSync::class)->sync($attribute);
+            }
+
             $attribute->load([
                 'values' => fn ($q) => $q->orderBy('id'),
                 'category:id,name',
@@ -3421,6 +3426,7 @@ class AdminController extends Controller
         $data = $this->normalizeAttributeCategories($data, $attribute);
 
         return DB::transaction(function () use ($data, $attribute) {
+            $wasEvent = in_array('event', $attribute->types ?? [$attribute->type], true);
             if (array_key_exists('name', $data)) {
                 $attribute->name = $data['name'];
             }
@@ -3493,6 +3499,13 @@ class AdminController extends Controller
                 }
             }
 
+            $isEvent = in_array('event', $attribute->types ?? [$attribute->type], true);
+            if ($isEvent && (!$wasEvent || array_key_exists('values', $data))) {
+                app(StoreEventFilterSync::class)->sync($attribute);
+            } elseif ($wasEvent && !$isEvent) {
+                app(StoreEventFilterSync::class)->sync($attribute, true);
+            }
+
             $attribute->load([
                 'values' => fn ($q) => $q->orderBy('id'),
                 'category:id,name',
@@ -3508,7 +3521,10 @@ class AdminController extends Controller
 
     public function deleteAttribute(Attribute $attribute)
     {
-        $attribute->delete();
+        DB::transaction(function () use ($attribute) {
+            app(StoreEventFilterSync::class)->sync($attribute, true);
+            $attribute->delete();
+        });
         return response()->json(['success' => true]);
     }
 
