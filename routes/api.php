@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\StorePostInteractionController;
 use App\Http\Controllers\Api\StoreFollowController;
 use App\Http\Controllers\Api\AdminStoreOnboardingController;
 use App\Http\Controllers\Api\SignupOtpController;
+use App\Http\Controllers\Api\PasswordOtpController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -19,6 +20,9 @@ Route::prefix('auth')->group(function () {
     Route::post('check-availability', [AuthController::class, 'checkAvailability'])->middleware('throttle:60,1,signup-availability:');
     Route::post('login', [AuthController::class, 'login']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('password-otp/send', [PasswordOtpController::class, 'send'])->middleware('throttle:5,1');
+    Route::post('password-otp/verify', [PasswordOtpController::class, 'verify'])->middleware('throttle:10,1');
+    Route::post('password-otp/reset', [PasswordOtpController::class, 'reset'])->middleware('throttle:10,1');
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
     Route::get('me', [AuthController::class, 'me'])->middleware('auth:sanctum');
     Route::get('google/redirect', [AuthController::class, 'redirectToGoogle']);

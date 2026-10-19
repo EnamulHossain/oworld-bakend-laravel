@@ -20,7 +20,6 @@ class GenNetSmsService
         $response = Http::asJson()
             ->acceptJson()
             ->timeout(15)
-            ->retry(2, 300)
             ->post("{$domain}/api/v3/send-sms", [
                 'api_token' => $token,
                 'sid' => $sid,
@@ -30,8 +29,9 @@ class GenNetSmsService
             ]);
 
         $data = $response->json();
-        if (!$response->successful() || strtoupper((string) ($data['status'] ?? '')) !== 'SUCCESS') {
-            throw new RuntimeException((string) ($data['error_message'] ?? 'The SMS provider rejected the request.'));
+        if (!$response->successful() || strtoupper((string) ($data['status'] ?? '')) !== 'SUCCESS'
+            || strtoupper((string) ($data['smsinfo'][0]['sms_status'] ?? '')) !== 'SUCCESS') {
+            throw new RuntimeException('The SMS provider rejected the request.');
         }
     }
 }
