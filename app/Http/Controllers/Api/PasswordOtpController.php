@@ -43,7 +43,7 @@ class PasswordOtpController extends Controller
             }
             $otp = (string) random_int(100000, 999999);
             try {
-                $sms->send($phone, "Your oWorld password reset code is {$otp}. It expires in 5 minutes. Do not share this code.", Str::upper(Str::random(20)));
+                $sms->send($phone, "Your O’World verification code is {$otp}. Valid for 5 minutes. Do not share this code with anyone.\n\nHappy exploring!\nO’World", Str::upper(Str::random(20)));
             } catch (\Throwable $exception) {
                 // Provider exceptions can contain credentials or the OTP; never expose them.
                 return response()->json(['message' => 'Could not send the verification code. Please try again later.'], 503);

@@ -25,22 +25,19 @@ class SignupOtpController extends Controller
         $otp = (string) random_int(100000, 999999);
         $reference = 'OTP'.now()->format('ymdHis').Str::upper(Str::random(4));
 
-        /* -------------------------------------------------------------------------
-         * MOCK / TEST OTP MODE:
-         * Real SMS sending is commented out below.
-         * To re-enable live SMS sending, uncomment the line below:
-         *
-         * $sms->send($phone, "Your oWorld verification code is {$otp}. It expires in 5 minutes. Do not share this code.", $reference);
-         * ------------------------------------------------------------------------- */
+        try {
+            $sms->send($phone, "Your O’World verification code is {$otp}. Valid for 5 minutes. Do not share this code with anyone.\n\nHappy exploring!\nO’World", $reference);
+        } catch (\Throwable $exception) {
+            // Provider errors may contain credentials or the OTP; keep them private.
+            return response()->json(['message' => 'Could not send the verification code. Please try again later.'], 503);
+        }
 
         Cache::put($otpKey, ['hash' => hash('sha256', $otp), 'attempts' => 0], now()->addMinutes(5));
         Cache::put($cooldownKey, true, now()->addSeconds(60));
 
         return response()->json([
             'success' => true,
-            'message' => 'Verification code generated.',
-            // Temporary test-flow prefill; remove when enabling live SMS delivery.
-            'test_otp' => $otp,
+            'message' => 'Verification code sent.',
         ]);
     }
 
