@@ -15,6 +15,15 @@ class User extends BaseAuthenticatable
 
     protected $guard_name = 'sanctum';
 
+    protected static function booted(): void
+    {
+        static::updating(function (User $user) {
+            if ($user->isDirty('phone')) {
+                $user->isphoneverified = false;
+            }
+        });
+    }
+
     /**
      * The attributes that are mass assignable.
      *
@@ -103,6 +112,7 @@ class User extends BaseAuthenticatable
             'subcategory_ids' => 'array',
             'store_filters' => 'array',
             'is_verified' => 'boolean',
+            'isphoneverified' => 'boolean',
             'ismanagedbyoworld' => 'boolean',
             'business_hours' => 'array',
             'payment_methods' => 'array',

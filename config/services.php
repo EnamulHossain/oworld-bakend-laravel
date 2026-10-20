@@ -46,6 +46,7 @@ return [
         'domain' => env('GENNET_SMS_DOMAIN'),
         'api_token' => env('GENNET_SMS_API_TOKEN'),
         'sid' => env('GENNET_SMS_SID'),
+        'ca_bundle' => env('GENNET_SMS_CA_BUNDLE', resource_path('certs/cacert.pem')),
     ],
 
 ];

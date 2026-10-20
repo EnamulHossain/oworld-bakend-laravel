@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\StoreFollowController;
 use App\Http\Controllers\Api\AdminStoreOnboardingController;
 use App\Http\Controllers\Api\SignupOtpController;
 use App\Http\Controllers\Api\PasswordOtpController;
+use App\Http\Controllers\Api\PhoneVerificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -52,6 +53,7 @@ Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHigh
 Route::get('public/store-posts/{post}/comments', [StorePostInteractionController::class, 'comments']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('phone-verification/verify', [PhoneVerificationController::class, 'verify'])->middleware('throttle:10,1');
     Route::get('store-profiles/{user}', [OrganizationController::class, 'showStoreProfile']);
     Route::put('store-profiles/{user}', [OrganizationController::class, 'updateProfile']);
     Route::get('profile', [UserProfileController::class, 'show']);

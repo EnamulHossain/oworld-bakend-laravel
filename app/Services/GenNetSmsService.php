@@ -18,6 +18,7 @@ class GenNetSmsService
         }
 
         $response = Http::asJson()
+            ->withOptions(['verify' => config('services.gennet.ca_bundle')])
             ->acceptJson()
             ->timeout(15)
             ->post("{$domain}/api/v3/send-sms", [

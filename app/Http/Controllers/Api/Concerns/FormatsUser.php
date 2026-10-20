@@ -37,6 +37,7 @@ trait FormatsUser
             'organizationName' => $user->organization_name,
             'business_type' => $user->business_type,
             'phone' => $user->phone,
+            'isphoneverified' => (bool) $user->isphoneverified,
             'avatar' => $this->formatAvatar($user->avatar),
             'referralCode' => $user->referral_code,
             'referredByUserId' => $user->referred_by_user_id,

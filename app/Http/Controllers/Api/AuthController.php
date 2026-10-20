@@ -37,8 +37,8 @@ class AuthController extends Controller
             $digits = preg_replace('/\D+/', '', $value);
             $localPhone = str_starts_with($digits, '880') ? '0' . substr($digits, 3) : $digits;
             $internationalPhone = '+880' . ltrim($localPhone, '0');
-            $exists = User::whereIn('phone', [$localPhone, $internationalPhone])->exists();
-            $message = 'This mobile number is already registered.';
+            $exists = User::whereIn('phone', [$localPhone, $internationalPhone, ltrim($internationalPhone, '+')])->exists();
+            $message = 'This phone number is already registered to another account.';
         } else {
             $exists = User::whereRaw('LOWER(TRIM(email)) = ?', [Str::lower($value)])->exists();
             $message = 'This email address is already registered.';
@@ -151,6 +151,10 @@ class AuthController extends Controller
                 'referral_code' => $this->generateUniqueReferralCode($data['username']),
                 'referred_by_user_id' => $referrer?->id,
             ]);
+
+            // Registration reaches this point only after validating the OTP token for this phone.
+            $user->isphoneverified = true;
+            $user->save();
 
             if ($referrer) {
                 $this->recordCompletedReferral($referrer, $user, $data['referral_code']);
