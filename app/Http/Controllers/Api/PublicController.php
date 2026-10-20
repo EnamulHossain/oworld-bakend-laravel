@@ -208,7 +208,7 @@ class PublicController extends Controller
             ->when(in_array($request->query('type'), ['offer', 'event', 'store'], true), fn ($query) => $query->whereJsonContains('category_types', $request->query('type')))
             ->orderBy('order')
             ->orderBy('name')
-            ->get(['id', 'name', 'short_name', 'image', 'icon', 'description', 'banner', 'gallery_sort_order', 'is_event_category', 'category_types']);
+            ->get(['id', 'name', 'short_name', 'image', 'cover_images', 'icon', 'description', 'banner', 'gallery_sort_order', 'is_event_category', 'category_types']);
 
         return response()->json([
             'success' => true,
@@ -384,6 +384,10 @@ class PublicController extends Controller
             ->orderByDesc('sort_order')
             ->orderByDesc('starting_date')
             ->orderByDesc('created_at');
+
+        if ($request->boolean('availability')) {
+            return $this->collectionAvailability($query);
+        }
 
         if ($categoryId) {
             $query->where('category_id', $categoryId);
@@ -609,6 +613,10 @@ class PublicController extends Controller
             ->orderByDesc('sort_order')
             ->orderByDesc('start_date')
             ->orderByDesc('created_at');
+
+        if ($request->boolean('availability')) {
+            return $this->collectionAvailability($query);
+        }
 
         $total = (clone $query)->count();
 
@@ -1224,6 +1232,13 @@ class PublicController extends Controller
         ]);
     }
 
+    private function collectionAvailability($query)
+    {
+        return response()->json(['availability' => $query->withoutEagerLoads()->get([
+            'category_id', 'category_ids', 'subcategory_id', 'subcategory_ids', 'area_id', 'attributes',
+        ])]);
+    }
+
     public function organizations(Request $request)
     {
         $this->syncOfferAndEventLifecycle();
@@ -1313,6 +1328,27 @@ class PublicController extends Controller
                 ->pluck('id');
 
             $query->whereKey($matchingOrganizationIds);
+        }
+
+        if ($request->boolean('availability')) {
+            $availableStores = (clone $query)->with(['organizationOffers' => function ($offers) use ($categoryId) {
+                $offers->whereIn('status', ['published', 'active'])
+                    ->when($categoryId > 0, fn ($offerQuery) => $offerQuery->where('category_id', $categoryId))
+                    ->select(['id', 'organization_id', 'attributes']);
+            }])->get(['id', 'categories', 'subcategory_id', 'subcategory_ids', 'area_id']);
+
+            return response()->json(['availability' => [
+                'categories' => $availableStores->flatMap(fn ($store) => $store->categories ?? [])->unique()->values(),
+                'subcategories' => $availableStores->flatMap(fn ($store) => array_merge($store->subcategory_ids ?? [], [$store->subcategory_id]))->filter()->unique()->values(),
+                'category_subcategories' => $availableStores->flatMap(fn ($store) => collect($store->categories ?? [])
+                    ->map(fn ($category) => ['category' => (string) $category, 'ids' => array_merge($store->subcategory_ids ?? [], [$store->subcategory_id])]))
+                    ->groupBy('category')->map(fn ($entries) => $entries->flatMap(fn ($entry) => $entry['ids'])->filter()->unique()->values()),
+                'areas' => $availableStores->pluck('area_id')->filter()->unique()->values(),
+                'attributes' => $availableStores->flatMap(fn ($store) => $store->organizationOffers)
+                    ->flatMap(fn ($offer) => $offer->attributes ?? [])
+                    ->groupBy(fn ($entry) => (string) ($entry['attribute_id'] ?? ''))
+                    ->map(fn ($entries) => $entries->flatMap(fn ($entry) => $entry['value_ids'] ?? [])->unique()->values()),
+            ]]);
         }
 
         $total = (clone $query)->count();

@@ -12,6 +12,7 @@ class Category extends BaseModel
         'name',
         'short_name',
         'image',
+        'cover_images',
         'banner',
         'gallery_sort_order',
         'icon',
@@ -27,6 +28,7 @@ class Category extends BaseModel
     protected $casts = [
         'order' => 'integer',
         'banner' => 'array',
+        'cover_images' => 'array',
         'gallery_sort_order' => 'array',
         'is_event_category' => 'boolean',
         'category_types' => 'array',

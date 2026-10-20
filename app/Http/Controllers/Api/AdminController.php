@@ -280,11 +280,15 @@ class AdminController extends Controller
 
     public function storeOrganization(Request $request)
     {
+        if (!$request->filled('password')) {
+            $request->merge(['password' => trim((string) $request->input('phone', ''))]);
+        }
+
         $data = $request->validate([
             'organization_name' => ['required', 'string', 'max:255'],
             'username' => ['nullable', 'string', 'max:50', 'unique:users,username'],
             'email' => ['nullable', 'email', 'unique:users,email'],
-            'password' => ['nullable', 'string', 'min:6'],
+            'password' => ['required', 'string', 'min:6'],
             'business_type' => ['nullable', 'string', 'max:100'],
             'public_subcategory' => ['nullable', 'string', 'max:100'],
             'public_tag' => ['nullable', 'string', 'max:50'],
@@ -1120,6 +1124,8 @@ class AdminController extends Controller
     public function storeCategory(Request $request)
     {
         $data = $request->validate([
+            'cover_images' => ['nullable', 'array'],
+            'cover_images.*' => ['required', 'string', 'max:500'],
             'name' => ['required', 'string', 'max:100'],
             'short_name' => ['nullable', 'string', 'max:50'],
             'image' => ['nullable', 'string', 'max:500'],
@@ -1177,6 +1183,8 @@ class AdminController extends Controller
     public function updateCategory(Request $request, Category $category)
     {
         $data = $request->validate([
+            'cover_images' => ['nullable', 'array'],
+            'cover_images.*' => ['required', 'string', 'max:500'],
             'name' => ['sometimes', 'string', 'max:100'],
             'short_name' => ['nullable', 'string', 'max:50'],
             'image' => ['nullable', 'string', 'max:500'],
@@ -1425,7 +1433,7 @@ class AdminController extends Controller
             'attributes.*.value_ids' => ['nullable', 'array'],
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in($this->offerEventStatuses())],
-            'starting_date' => ['required', 'date', 'after_or_equal:today'],
+            'starting_date' => ['required', 'date', 'after_or_equal:' . now()->subYear()->toDateString()],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['required', 'date', 'after_or_equal:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
