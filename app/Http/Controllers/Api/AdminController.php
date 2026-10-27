@@ -348,7 +348,9 @@ class AdminController extends Controller
         $email = $data['email'] ?? $this->generateUniqueOrganizationEmail($organizationName);
         $password = $data['password'] ?? Str::random(16);
 
+        $this->prepareBranchLink($data);
         $organization = User::create([
+            'branch_mode' => empty($data['parent_org_id']) ? 'unified' : 'independent',
             'username' => $username,
             'email' => $email,
             'password' => Hash::make($password),
@@ -472,6 +474,8 @@ class AdminController extends Controller
             unset($data['password']);
         }
 
+        $this->prepareBranchLink($data, $user);
+        if (!empty($data['parent_org_id'])) $data['branch_mode'] = 'independent';
         $user->fill($data);
         $user->role = 'organization';
         $user->save();
@@ -4198,11 +4202,30 @@ class AdminController extends Controller
         return true;
     }
 
+    private function prepareBranchLink(array $data, ?User $branch = null): void
+    {
+        if (empty($data['parent_org_id'])) {
+            if ($branch && array_key_exists('parent_org_id', $data) && $branch->parent_org_id) {
+                DB::table('branch_managers')->where('branch_id', $branch->id)->delete();
+            }
+            return;
+        }
+        $parent = User::findOrFail($data['parent_org_id']);
+        if ($parent->locations()->exists() || ($branch && ($branch->locations()->exists() || $branch->childOrganizations()->exists()))) {
+            throw ValidationException::withMessages(['parent_org_id' => ['Unified locations or an existing mother profile cannot be linked as an independent branch.']]);
+        }
+        $parent->update(['branch_mode' => 'independent']);
+        if ($branch && (int) $branch->parent_org_id !== (int) $parent->id) {
+            DB::table('branch_managers')->where('branch_id', $branch->id)->delete();
+        }
+    }
+
     private function formatOrganization(User $user): array
     {
         return [
             'id' => $user->id,
             'parent_org_id' => $user->parent_org_id,
+            'branch_mode' => $user->branch_mode,
             'username' => $user->username,
             'email' => $user->email,
             'contact_email' => $user->contact_email,

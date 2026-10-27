@@ -35,6 +35,7 @@ class User extends BaseAuthenticatable
         'password',
         'role',
         'parent_org_id',
+        'branch_mode',
         'status',
         'organization_name',
         'business_type',
@@ -148,6 +149,17 @@ class User extends BaseAuthenticatable
     public function organizationOffers()
     {
         return $this->hasMany(Offer::class, 'organization_id');
+    }
+
+    public function branchProfiles()
+    {
+        $parentId = $this->parent_org_id ?: $this->id;
+        return self::query()->where('role', 'organization')->where(fn ($query) => $query->whereKey($parentId)->orWhere('parent_org_id', $parentId));
+    }
+
+    public function locations()
+    {
+        return $this->hasMany(StoreLocation::class, 'organization_id');
     }
 
     public function parentOrganization()

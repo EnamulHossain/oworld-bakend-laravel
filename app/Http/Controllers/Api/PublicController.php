@@ -271,6 +271,7 @@ class PublicController extends Controller
             ]);
 
         $offers = Offer::query()
+            ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with('organization:id,organization_name')
             ->where('status', 'published')
             ->where('category_id', $category->id)
@@ -290,6 +291,8 @@ class PublicController extends Controller
                 'cover',
                 'images',
                 'organization_id',
+                'branch_ids',
+                'location_ids',
                 'sort_order',
                 'offer_type',
             ]);
@@ -325,6 +328,8 @@ class PublicController extends Controller
             $images = is_array($offer->images) ? $offer->images : [];
             return [
                 'id' => $offer->id,
+                'location_ids' => $offer->location_ids,
+                'available_at' => $offer->available_at,
                 'title' => $offer->name,
                 'description' => $offer->details,
                 'date' => $offer->start_date,
@@ -599,6 +604,7 @@ class PublicController extends Controller
         $offerType = strtolower((string)$request->query('offer_type', ''));
 
         $query = Offer::query()
+            ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with([
                 'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours',
                 'category:id,name',
@@ -642,6 +648,8 @@ class PublicController extends Controller
                 'images',
                 'attributes',
                 'organization_id',
+                'branch_ids',
+                'location_ids',
                 'category_id',
                 'category_ids',
                 'subcategory_id',
@@ -658,6 +666,8 @@ class PublicController extends Controller
                 $images = is_array($offer->images) ? $offer->images : [];
                 return [
                     'id' => $offer->id,
+                    'location_ids' => $offer->location_ids,
+                    'available_at' => $offer->available_at,
                     'status' => $offer->status,
                     'title' => $offer->name,
                     'description' => $offer->details,
@@ -852,6 +862,7 @@ class PublicController extends Controller
         $limit = min((int)$request->query('limit', 12), 50);
 
         $offers = Offer::query()
+            ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with('organization:id,organization_name')
             ->where('status', 'published')
             ->orderBy('sort_order')
@@ -871,11 +882,15 @@ class PublicController extends Controller
                 'videos',
                 'thumbnail',
                 'organization_id',
+                'branch_ids',
+                'location_ids',
                 'sort_order',
                 'offer_type',
             ])->map(function ($offer) {
                 return [
                     'id' => $offer->id,
+                    'location_ids' => $offer->location_ids,
+                    'available_at' => $offer->available_at,
                     'name' => $offer->name,
                     'details' => $offer->details,
                     'start_date' => $offer->start_date,
@@ -1158,6 +1173,7 @@ class PublicController extends Controller
 
         $user = Auth::guard('sanctum')->user();
         $offer = Offer::query()
+            ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with([
                 'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours,facebook_url,instagram_url,website_url,google_map_url',
                 'category:id,name',
@@ -1177,6 +1193,8 @@ class PublicController extends Controller
             'success' => true,
             'offer' => [
                 'id' => $offer->id,
+                'location_ids' => $offer->location_ids,
+                'available_at' => $offer->available_at,
                 'status' => $offer->status,
                 'name' => $offer->name,
                 'details' => $offer->details,
@@ -1276,15 +1294,15 @@ class PublicController extends Controller
                     $inner->where('organization_name', 'like', "%{$q}%")
                         ->orWhere('username', 'like', "%{$q}%")
                         ->orWhere('business_type', 'like', "%{$q}%")
-                        ->orWhere('address', 'like', "%{$q}%");
+                        ->orWhere('address', 'like', "%{$q}%")->orWhereHas('locations', fn ($locations) => $locations->where('name', 'like', "%{$q}%")->orWhere('address', 'like', "%{$q}%"));
                 });
             })
             ->when($area !== '', function ($builder) use ($area) {
                 $builder->where(function ($inner) use ($area) {
-                    $inner->where('address', 'like', "%{$area}%");
+                    $inner->where('address', 'like', "%{$area}%")->orWhereHas('locations', fn ($locations) => $locations->where('name', 'like', "%{$area}%")->orWhere('address', 'like', "%{$area}%"));
                 });
             })
-            ->when($areaIds !== [], fn ($builder) => $builder->whereIn('area_id', $areaIds))
+            ->when($areaIds !== [], fn ($builder) => $builder->where(fn ($q) => $q->whereIn('area_id', $areaIds)->orWhereHas('locations', fn ($locations) => $locations->whereIn('area_id', $areaIds))))
             ->when($categoryName !== '' || $resolvedCategoryId !== null, function ($builder) use ($categoryName, $resolvedCategoryId) {
                 $builder->where(function ($inner) use ($categoryName, $resolvedCategoryId) {
                     $inner->whereJsonContains('categories', $categoryName);
@@ -1487,9 +1505,8 @@ class PublicController extends Controller
                 ];
             });
 
-        $branches = User::query()
-            ->where('role', 'organization')
-            ->where('parent_org_id', $record->id)
+        $branches = $record->branchProfiles()
+            ->where('id', '!=', $record->id)
             ->orderBy('organization_name')
             ->orderBy('id')
             ->get()
@@ -1508,124 +1525,18 @@ class PublicController extends Controller
 
     public function search(Request $request)
     {
-        $this->syncOfferAndEventLifecycle();
-
-        $q = trim((string)$request->query('q', ''));
-        if (strlen($q) < 2) {
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:200'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:15'],
+        ]);
+        $query = trim($data['q'] ?? '');
+        if (mb_strlen($query) < 2) {
             return response()->json(['success' => true, 'results' => []]);
         }
-
-        $limit = min((int)$request->query('limit', 5), 15);
-        $normalizedQuery = strtolower($q);
-        $searchOffersByType = in_array($normalizedQuery, ['offer', 'offers'], true);
-        $searchEventsByType = in_array($normalizedQuery, ['event', 'events'], true);
-        $searchCategoriesByType = in_array($normalizedQuery, ['category', 'categories'], true);
-
-        $categories = Category::query()
-            ->where('status', 'active')
-            ->where(function ($builder) use ($q, $searchCategoriesByType) {
-                $builder->where('name', 'like', "%{$q}%")
-                    ->orWhere('description', 'like', "%{$q}%")
-                    ->orWhere('short_name', 'like', "%{$q}%");
-
-                if ($searchCategoriesByType) {
-                    $builder->orWhereRaw('1 = 1');
-                }
-            })
-            ->orderBy('name')
-            ->limit($limit)
-            ->get(['id', 'name', 'short_name', 'description', 'icon'])
-            ->map(fn ($cat) => [
-                'type' => 'category',
-                'id' => $cat->id,
-                'title' => $cat->name,
-                'name' => $cat->name,
-                'short_name' => $cat->short_name,
-                'description' => $cat->description,
-                'subtitle' => $cat->short_name,
-                'icon' => $cat->icon,
-            ]);
-
-        $events = Event::query()
-            ->where('status', 'published')
-            ->where(function ($builder) use ($q, $searchEventsByType) {
-                $builder->where('name', 'like', "%{$q}%")
-                    ->orWhere('description', 'like', "%{$q}%")
-                    ->orWhere('location', 'like', "%{$q}%")
-                    ->orWhere('address', 'like', "%{$q}%")
-                    ->orWhereHas('organization', function ($orgQuery) use ($q) {
-                        $orgQuery->where('organization_name', 'like', "%{$q}%")
-                            ->orWhere('username', 'like', "%{$q}%");
-                    });
-
-                if ($searchEventsByType) {
-                    $builder->orWhereRaw('1 = 1');
-                }
-            })
-            ->orderBy('starting_date')
-            ->limit($limit)
-            ->get(['id', 'name', 'description', 'starting_date', 'location', 'address'])
-            ->map(fn ($event) => [
-                'type' => 'event',
-                'id' => $event->id,
-                'title' => $event->name,
-                'description' => $event->description,
-                'location' => $event->location,
-                'address' => $event->address,
-                'date' => $event->starting_date,
-            ]);
-
-        $offers = Offer::query()
-            ->where('status', 'published')
-            ->where(function ($builder) use ($q, $searchOffersByType) {
-                $builder->where('name', 'like', "%{$q}%")
-                    ->orWhere('details', 'like', "%{$q}%")
-                    ->orWhere('address', 'like', "%{$q}%")
-                    ->orWhere('phone_number', 'like', "%{$q}%")
-                    ->orWhereHas('organization', function ($orgQuery) use ($q) {
-                        $orgQuery->where('organization_name', 'like', "%{$q}%")
-                            ->orWhere('username', 'like', "%{$q}%");
-                    });
-
-                if ($searchOffersByType) {
-                    $builder->orWhereRaw('1 = 1');
-                }
-            })
-            ->orderBy('start_date')
-            ->limit($limit)
-            ->get(['id', 'name', 'details', 'start_date'])
-            ->map(fn ($offer) => [
-                'type' => 'offer',
-                'id' => $offer->id,
-                'title' => $offer->name,
-                'description' => $offer->details,
-                'date' => $offer->start_date,
-            ]);
-
-        $organizations = User::query()
-            ->where('role', 'organization')
-            ->where(function ($builder) use ($q) {
-                $builder->where('organization_name', 'like', "%{$q}%")
-                    ->orWhere('username', 'like', "%{$q}%")
-                    ->orWhere('business_type', 'like', "%{$q}%")
-                    ->orWhere('address', 'like', "%{$q}%");
-            })
-            ->orderBy('organization_name')
-            ->limit($limit)
-            ->get(['id', 'organization_name', 'username', 'business_type', 'address', 'avatar'])
-            ->map(fn ($organization) => [
-                'type' => 'organization',
-                'id' => $organization->id,
-                'title' => $organization->organization_name ?: $organization->username,
-                'name' => $organization->organization_name ?: $organization->username,
-                'description' => $organization->business_type,
-                'subtitle' => $organization->address,
-                'image' => $organization->avatar,
-            ]);
-
+        $this->syncOfferAndEventLifecycle();
         return response()->json([
             'success' => true,
-            'results' => $organizations->concat($categories)->concat($events)->concat($offers)->values(),
+            'results' => app(\App\Services\UniversalSearch::class)->search($query, (int) ($data['limit'] ?? 5)),
         ]);
     }
 
@@ -1651,6 +1562,8 @@ class PublicController extends Controller
         return [
             'id' => $organization->id,
             'parent_org_id' => $organization->parent_org_id,
+            'branch_mode' => $organization->branch_mode,
+            'locations' => $organization->branch_mode === 'unified' ? $organization->locations()->get() : [],
             'username' => $organization->username,
             'organization_name' => $organization->organization_name,
             'organizationName' => $organization->organization_name,
@@ -1713,6 +1626,8 @@ class PublicController extends Controller
 
         return [
             'id' => $offer->id,
+            'location_ids' => $offer->location_ids,
+            'available_at' => $offer->available_at,
             'title' => $offer->name,
             'name' => $offer->name,
             'description' => $offer->details,

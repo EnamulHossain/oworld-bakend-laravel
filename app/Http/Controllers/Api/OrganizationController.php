@@ -284,6 +284,7 @@ class OrganizationController extends Controller
             'business_hours.*.open' => ['nullable', 'date_format:H:i'],
             'business_hours.*.close' => ['nullable', 'date_format:H:i'],
             'business_hours.*.closed' => ['required', 'boolean'],
+            'business_hours.*.always_open' => ['sometimes', 'boolean'],
             'contact_email' => ['nullable', 'email', 'max:255'],
             'messenger_url' => ['nullable', 'url:http,https', 'max:500'],
             'tiktok_url' => ['nullable', 'url:http,https', 'max:500'],
@@ -402,6 +403,7 @@ class OrganizationController extends Controller
             return response()->json(['error' => 'Only parent stores can manage branches.'], 422);
         }
 
+        abort_unless($parent->branch_mode === 'independent', 422, 'Choose individually managed branches first.');
         $data = $request->validate([
             'branch_ids' => ['array'],
             'branch_ids.*' => ['integer'],
@@ -422,6 +424,7 @@ class OrganizationController extends Controller
             return response()->json(['error' => 'One or more selected stores cannot be linked as branches.'], 422);
         }
 
+        DB::table('branch_managers')->where('parent_id', $parent->id)->whereNotIn('branch_id', $validBranchIds)->delete();
         User::query()
             ->where('role', 'organization')
             ->where('parent_org_id', $parent->id)
@@ -431,7 +434,7 @@ class OrganizationController extends Controller
         User::query()
             ->where('role', 'organization')
             ->whereIn('id', $validBranchIds)
-            ->update(['parent_org_id' => $parent->id]);
+            ->update(['parent_org_id' => $parent->id, 'branch_mode' => 'independent']);
 
         $branches = $this->organizationBranches($parent)->get()->map(fn (User $branch) => $this->formatOrganizationProfile($branch));
 
@@ -449,6 +452,7 @@ class OrganizationController extends Controller
             return response()->json(['error' => 'Branch not found.'], 404);
         }
 
+        DB::table('branch_managers')->where('branch_id', $branch->id)->delete();
         $branch->parent_org_id = null;
         $branch->save();
 
@@ -460,6 +464,8 @@ class OrganizationController extends Controller
         return [
             'id' => $user->id,
             'parent_org_id' => $user->parent_org_id,
+            'branch_mode' => $user->branch_mode,
+            'locations' => $user->branch_mode === 'unified' ? $user->locations()->get() : [],
             'username' => $user->username,
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
@@ -518,6 +524,8 @@ class OrganizationController extends Controller
         return User::query()
             ->where('role', 'organization')
             ->whereKeyNot($user->id)
+            ->whereDoesntHave('childOrganizations')
+            ->whereDoesntHave('locations')
             ->where(function ($query) use ($user) {
                 $query->whereNull('parent_org_id')
                     ->orWhere('parent_org_id', $user->id);
@@ -539,7 +547,7 @@ class OrganizationController extends Controller
             ->get();
     }
 
-    private function resolveOfferBranchAssignment(User $user, array $requestedIds): array
+    private function resolveOfferBranchAssignment(User $user, array $requestedIds, Request $request): array
     {
         $branchIds = collect($requestedIds)
             ->map(fn ($id) => (int) $id)
@@ -554,7 +562,21 @@ class OrganizationController extends Controller
             throw ValidationException::withMessages(['branch_ids' => ['Select branches belonging to this store family only.']]);
         }
         $isParent = $user->parent_org_id === null;
+        $locationIds = $request->input('location_ids');
+        if ($locationIds !== null) {
+            validator(['location_ids' => $locationIds], [
+                'location_ids' => ['array'],
+                'location_ids.*' => ['integer', 'distinct', Rule::exists('store_locations', 'id')->where('organization_id', $user->id)],
+            ])->validate();
+            if ($locationIds && $user->branch_mode !== 'unified') {
+                throw ValidationException::withMessages(['location_ids' => ['Locations apply to unified profiles only.']]);
+            }
+        }
+        if ($user->branch_mode === 'unified' && $branchIds->all() !== [(int) $user->id]) {
+            throw ValidationException::withMessages(['branch_ids' => ['Unified offers belong to the main profile.']]);
+        }
         return [
+            ...($request->has('location_ids') ? ['location_ids' => $locationIds ?: null] : []),
             'branch_ids' => $branchIds->all(),
             'branch_assignment_status' => $isParent ? 'approved' : 'pending',
             'branch_requested_by' => $user->id,
@@ -844,7 +866,7 @@ class OrganizationController extends Controller
             $gallerySortOrder = [];
         }
 
-        $branchAssignment = $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids'] ?? []);
+        $branchAssignment = $this->resolveOfferBranchAssignment($request->user(), $data['branch_ids'] ?? [], $request);
 
         $result = DB::transaction(function () use ($data, $gallerySortOrder, $userId, $branchAssignment) {
             $offer = Offer::create([
@@ -973,7 +995,7 @@ class OrganizationController extends Controller
                 throw ValidationException::withMessages(['attributes' => ['Choose filters and values belonging to the selected subcategories.']]);
             }
         }
-        $branchAssignment = $this->resolveOfferBranchAssignment($store, $extra['branch_ids'] ?? ($offer?->branch_ids ?? []));
+        $branchAssignment = $this->resolveOfferBranchAssignment($store, $extra['branch_ids'] ?? ($offer?->branch_ids ?? []), $request);
         if (!$isAdmin && $offer && collect($branchAssignment['branch_ids'])->sort()->values()->all() === collect($offer->branch_ids ?? [])->map(fn ($id) => (int) $id)->sort()->values()->all()) {
             $branchAssignment = array_merge($branchAssignment, [
                 'branch_assignment_status' => $offer->branch_assignment_status,

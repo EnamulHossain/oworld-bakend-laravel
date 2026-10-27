@@ -37,6 +37,7 @@ class Offer extends BaseModel
         'subcategory_ids',
         'organization_id',
         'branch_ids',
+        'location_ids',
         'branch_assignment_status',
         'branch_requested_by',
         'branch_approved_by',
@@ -70,6 +71,7 @@ class Offer extends BaseModel
         'category_ids' => 'array',
         'subcategory_ids' => 'array',
         'branch_ids' => 'array',
+        'location_ids' => 'array',
         'branch_approved_at' => 'datetime',
         'area_ids' => 'array',
         'discount_value' => 'decimal:2',
@@ -117,6 +119,20 @@ class Offer extends BaseModel
         });
 
         return array_map(fn ($item) => $item['url'], $ranked);
+    }
+
+    public function getAvailableAtAttribute(): array
+    {
+        if (!$this->organization_id) return [];
+        $store = User::find($this->organization_id);
+        if (!$store) return [];
+        if ($store->branch_mode === 'unified') {
+            return $store->locations()->when($this->location_ids, fn ($q) => $q->whereIn('id', $this->location_ids))
+                ->get(['id', 'name', 'status', 'address', 'area_id'])->toArray();
+        }
+        return User::whereIn('id', $this->branch_ids ?: [$store->id])->get()->map(fn ($branch) => [
+            'id' => $branch->id, 'name' => $branch->organization_name ?: $branch->username, 'profile_id' => $branch->id, 'area_id' => $branch->area_id,
+        ])->all();
     }
 
     public function category()

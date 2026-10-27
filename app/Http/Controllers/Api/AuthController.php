@@ -503,7 +503,7 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'user' => $this->formatUser($user),
+            'user' => array_merge($this->formatUser($user), ['branch_manager' => (bool) $request->attributes->get('branch_manager', false)]),
         ]);
     }
 

@@ -53,7 +53,14 @@ Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHigh
 Route::get('public/store-posts/{post}/comments', [StorePostInteractionController::class, 'comments']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('branch-access/branches', [\App\Http\Controllers\Api\BranchManagerController::class, 'createBranch']);
+    Route::get('branch-access', [\App\Http\Controllers\Api\BranchManagerController::class, 'index']);
+    Route::post('branch-access', [\App\Http\Controllers\Api\BranchManagerController::class, 'invite']);
+    Route::post('branch-access/{assignment}/accept', [\App\Http\Controllers\Api\BranchManagerController::class, 'accept']);
+    Route::post('branch-access/{assignment}/session', [\App\Http\Controllers\Api\BranchManagerController::class, 'session']);
+    Route::delete('branch-access/{assignment}', [\App\Http\Controllers\Api\BranchManagerController::class, 'revoke']);
     Route::post('phone-verification/verify', [PhoneVerificationController::class, 'verify'])->middleware('throttle:10,1');
+    Route::put('store-profiles/{user}/locations', [\App\Http\Controllers\Api\BranchLocationController::class, 'update']);
     Route::get('store-profiles/{user}', [OrganizationController::class, 'showStoreProfile']);
     Route::put('store-profiles/{user}', [OrganizationController::class, 'updateProfile']);
     Route::get('profile', [UserProfileController::class, 'show']);
