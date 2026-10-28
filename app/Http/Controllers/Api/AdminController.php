@@ -79,6 +79,7 @@ class AdminController extends Controller
 
         $user->update(['role' => $data['role']]);
         $user->syncRoles([$data['role']]);
+        app(\App\Services\StoreOnboardingSync::class)->ensure($user);
 
         return response()->json(['success' => true, 'user' => $user]);
     }
@@ -389,6 +390,7 @@ class AdminController extends Controller
 
         Role::firstOrCreate(['name' => 'organization', 'guard_name' => 'sanctum']);
         $organization->syncRoles(['organization']);
+        app(\App\Services\StoreOnboardingSync::class)->ensure($organization);
 
         return response()->json([
             'success' => true,

@@ -16,6 +16,8 @@ class AdminStoreOnboardingController extends Controller
         $query = Organization::query()
             ->with(['verification', 'owner:id,username,email,phone', 'category:id,name'])
             ->withCount('documents')
+            ->where(fn ($q) => $q->where('is_verified', false)->orWhereNull('is_verified'))
+            ->where(fn ($q) => $q->where('verification_status', '!=', 'approved')->orWhereNull('verification_status'))
             ->whereDoesntHave('verification', fn ($verification) => $verification->where('status', 'approved'))
             ->orderByDesc('created_at');
 

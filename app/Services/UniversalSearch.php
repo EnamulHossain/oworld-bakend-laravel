@@ -60,8 +60,23 @@ class UniversalSearch
             }
         }
         $terms = array_values(array_filter($terms, fn ($term, $index) => !isset($consumed[$index]), ARRAY_FILTER_USE_BOTH));
+        // Listing types are alternatives, not words every individual record must contain.
+        $typeAliases = [
+            'offer' => 'offer', 'offers' => 'offer',
+            'event' => 'event', 'events' => 'event',
+            'store' => 'organization', 'stores' => 'organization',
+            'business' => 'organization', 'businesses' => 'organization',
+            'directory' => 'organization', 'directories' => 'organization',
+        ];
+        $requestedTypes = [];
+        $terms = array_values(array_filter($terms, function ($term) use ($typeAliases, &$requestedTypes) {
+            if (!isset($typeAliases[$term])) return true;
+            $requestedTypes[$typeAliases[$term]] = true;
+            return false;
+        }));
         $vocabulary = self::words($categories->map(fn ($category) => $category->name.' '.$category->short_name)->implode(' ').' '.
             $attributes->map(fn ($attribute) => $attribute->name.' '.$attribute->values->pluck('value')->implode(' '))->implode(' '));
+        $terms = array_values(array_unique($terms));
         $structuredTerms = [];
         foreach ($terms as $term) {
             foreach ($vocabulary as $word) {
@@ -76,8 +91,10 @@ class UniversalSearch
             ->where(fn ($q) => $q->where('is_verified', true)->orWhereHas('organization', fn ($org) => $org->where('status', 'active')->where('verification_status', 'approved')))
             ->get(['id', 'parent_org_id', 'branch_mode', 'organization_name', 'username', 'categories', 'subcategory_id', 'subcategory_ids', 'area_id', 'store_filters', 'about', 'business_type', 'store_tags', 'avatar', 'profile_banner', 'address'])->keyBy('id');
         $results = [];
+        $listingBusinesses = [];
 
-        $add = function ($record, string $type, array $categoryIds, array $areaIds, array $selections, string $title, string $body, string $related = '', ?int $brandId = null) use (&$results, $terms, $structuredTerms, $areaConstraints, $categories, $attributes, $areas) {
+        $add = function ($record, string $type, array $categoryIds, array $areaIds, array $selections, string $title, string $body, string $related = '', ?int $brandId = null, bool $relatedBusiness = false) use (&$results, $terms, $structuredTerms, $areaConstraints, $categories, $attributes, $areas, $stores, $requestedTypes) {
+            if (!$relatedBusiness && $requestedTypes && !isset($requestedTypes[$type])) return;
             if ($areaConstraints && !array_intersect(array_keys($areaConstraints), $areaIds)) return;
             $labels = [];
             foreach ($categoryIds as $id) {
@@ -99,7 +116,8 @@ class UniversalSearch
             $otherWords = self::words($related.' '.$body);
             $typeWords = $type === 'organization' ? ['business', 'businesses', 'store', 'stores'] : [$type, $type.'s'];
             $score = 0;
-            foreach ($terms as $term) {
+            $matchedTerms = 0;
+            foreach ($relatedBusiness ? [] : $terms as $term) {
                 $weight = 0;
                 foreach ([$titleWords, $structuredWords, $typeWords, $otherWords] as $index => $words) {
                     // Known filters/categories require assignments, not incidental description claims.
@@ -110,9 +128,10 @@ class UniversalSearch
                         }
                     }
                 }
-                if (!$weight) return; // All meaningful terms must match this listing.
+                if ($weight) $matchedTerms++;
                 $score += $weight;
             }
+            if (!$relatedBusiness && $terms && !$matchedTerms) return;
             $location = collect($areaIds)->map(fn ($id) => $areas->get($id)?->name)->filter()->implode(', ');
             $results[] = [
                 'type' => $type, 'id' => $record->id, 'title' => $title,
@@ -121,12 +140,16 @@ class UniversalSearch
                 'categories' => collect($categoryIds)->map(fn ($id) => $categories->get($id)?->name)->filter()->unique()->values()->all(),
                 'tags' => $type === 'organization' ? ($record->store_tags ?? []) : [],
                 'verified' => $type === 'organization',
-                'store_name' => $related,
-                'start_date' => $type === 'event' ? $record->starting_date : null,
+                'store_name' => $type === 'organization' ? '' : (($stores->get($record->organization_id)?->organization_name ?: $stores->get($record->organization_id)?->username) ?? ''),
+                'start_date' => $type === 'event' ? $record->starting_date : ($type === 'offer' ? $record->start_date : null),
+                'is_recurring' => $type === 'offer' ? $record->is_recurring : false,
+                'recurring_days' => $type === 'offer' ? $record->recurring_days : [],
+                'recurring_start_date' => $type === 'offer' ? $record->recurring_start_date : null,
+                'recurring_end_date' => $type === 'offer' ? $record->recurring_end_date : null,
                 'end_date' => $type !== 'organization' ? $record->end_date : null,
                 'discount_type' => $type === 'offer' ? $record->discount_type : null,
                 'discount_value' => $type === 'offer' ? $record->discount_value : null,
-                '_score' => $score, '_brand' => $brandId,
+                '_score' => $score, '_brand' => $brandId, '_matches' => $matchedTerms,
             ];
         };
 
@@ -152,17 +175,48 @@ class UniversalSearch
                     if ($locationAreas) $areaIds = $locationAreas;
                 }
                 if (!$areaIds && $store?->area_id) $areaIds[] = (string) $store->area_id;
+                $before = count($results);
                 $add($record, $type, array_merge($this->ids($record, 'category_id', 'category_ids'), $this->ids($record, 'subcategory_id', 'subcategory_ids')),
                     $areaIds, $record->attributes ?? [], $record->name,
                     $type === 'offer' ? (string) $record->details : (string) $record->description,
                     $store ? $store->organization_name.' '.$store->username : '');
+                if ($store && count($results) > $before) {
+                    foreach (array_unique(array_merge([$store->id], $branchIds)) as $businessId) {
+                        if ($stores->has($businessId)) $listingBusinesses[$type.':'.$record->id][$businessId] = true;
+                    }
+                }
             }
+        }
+        // Prefer the intersection of word matches; otherwise use their union.
+        // Locations and requested listing types remain constraints on both sets.
+        $common = array_filter($results, fn ($result) => $result['_matches'] === count($terms));
+        if ($common) $results = array_values($common);
+        $relatedBusinesses = [];
+        foreach ($results as $result) {
+            foreach ($listingBusinesses[$result['type'].':'.$result['id']] ?? [] as $id => $_matched) {
+                $relatedBusinesses[$id] = true;
+            }
+        }
+        // Matching offers and events also surface their public business, once per business.
+        foreach ($relatedBusinesses as $id => $_matched) {
+            if (collect($results)->contains(fn ($result) => $result['type'] === 'organization' && $result['id'] === $id)) continue;
+            $store = $stores[$id];
+            // A listing venue is not proof that its owner has a store in that area.
+            $areaIds = array_filter(array_merge([(string) $store->area_id], $store->branch_mode === 'unified'
+                ? $store->locations()->pluck('area_id')->map(fn ($areaId) => (string) $areaId)->all() : []));
+            $add($store, 'organization', array_merge(array_map('strval', $store->categories ?? []), $this->ids($store, 'subcategory_id', 'subcategory_ids')),
+                $areaIds, $store->store_filters ?? [], $store->organization_name ?: $store->username,
+                (string) $store->about, '', $store->branch_mode === 'independent' ? null : (int) $store->id, true);
         }
         usort($results, fn ($a, $b) => ($b['_score'] <=> $a['_score']) ?: strnatcasecmp($a['title'], $b['title']) ?: ($a['id'] <=> $b['id']));
         $brands = [];
         $counts = [];
         $output = [];
+        $seen = [];
         foreach ($results as $result) {
+            $key = $result['type'].':'.$result['id'];
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
             if ($result['_brand'] && isset($brands[$result['_brand']])) {
                 $output[$brands[$result['_brand']]]['other_matching_branches']++;
                 continue;
@@ -173,7 +227,7 @@ class UniversalSearch
                 $brands[$result['_brand']] = count($output);
                 $result['other_matching_branches'] = 0;
             }
-            unset($result['_score'], $result['_brand']);
+            unset($result['_score'], $result['_brand'], $result['_matches']);
             $output[] = $result;
         }
         return $output;
