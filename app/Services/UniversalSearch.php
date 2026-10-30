@@ -88,7 +88,8 @@ class UniversalSearch
         }
 
         $stores = User::query()->where('role', 'organization')->where('status', 'active')
-            ->where(fn ($q) => $q->where('is_verified', true)->orWhereHas('organization', fn ($org) => $org->where('status', 'active')->where('verification_status', 'approved')))
+            ->where(fn ($q) => $q->whereHas('organization', fn ($org) => $org->where('status', 'active')->where('verification_status', 'approved'))
+                ->orWhere(fn ($legacy) => $legacy->whereDoesntHave('organization')->where('is_verified', true)))
             ->get(['id', 'parent_org_id', 'branch_mode', 'organization_name', 'username', 'categories', 'subcategory_id', 'subcategory_ids', 'area_id', 'store_filters', 'about', 'business_type', 'store_tags', 'avatar', 'profile_banner', 'address'])->keyBy('id');
         $results = [];
         $listingBusinesses = [];
@@ -159,7 +160,7 @@ class UniversalSearch
                 $store->about.' '.$store->business_type.' '.implode(' ', $store->store_tags ?? []), '', $store->branch_mode === 'independent' ? null : (int) $store->id);
         }
         foreach (['offer' => Offer::class, 'event' => Event::class] as $type => $class) {
-            $records = $class::query()->whereIn('status', ['published', 'scheduled'])
+            $records = $class::query()->whereIn('status', ['published', 'active'])
                 ->where(fn ($q) => $q->whereNull('end_date')->orWhereDate('end_date', '>=', now('Asia/Dhaka')->toDateString()))
                 ->when($type === 'offer', fn ($q) => $q->where('branch_assignment_status', 'approved'))->get();
             foreach ($records as $record) {

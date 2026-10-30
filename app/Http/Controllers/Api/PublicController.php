@@ -1528,15 +1528,26 @@ class PublicController extends Controller
         $data = $request->validate([
             'q' => ['nullable', 'string', 'max:200'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:15'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'type' => ['nullable', 'in:organization,offer,event'],
         ]);
         $query = trim($data['q'] ?? '');
         if (mb_strlen($query) < 2) {
             return response()->json(['success' => true, 'results' => []]);
         }
         $this->syncOfferAndEventLifecycle();
+        $service = app(\App\Services\UniversalSearch::class);
+        $limit = (int) ($data['limit'] ?? 5);
+        if (!isset($data['page'])) {
+            return response()->json(['success' => true, 'results' => $service->search($query, $limit)]);
+        }
+        $all = collect($service->search($query, PHP_INT_MAX));
+        $offset = ((int) $data['page'] - 1) * $limit;
+        $grouped = $all->groupBy('type');
         return response()->json([
             'success' => true,
-            'results' => app(\App\Services\UniversalSearch::class)->search($query, (int) ($data['limit'] ?? 5)),
+            'results' => $grouped->filter(fn ($items, $type) => !isset($data['type']) || $type === $data['type'])->flatMap(fn ($items) => $items->slice($offset, $limit)->values())->values(),
+            'totals' => $grouped->map(fn ($items) => $items->count()),
         ]);
     }
 

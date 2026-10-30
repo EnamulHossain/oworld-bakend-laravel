@@ -194,6 +194,41 @@ class UniversalSearchTest extends TestCase
         $this->assertFalse(UniversalSearch::wordMatches('free', 'fee', true));
     }
 
+    public function test_search_excludes_unpublished_listings_and_inactive_business_profiles(): void
+    {
+        $base = ['role' => 'organization', 'status' => 'active', 'is_verified' => true];
+        $visible = User::create($base + ['organization_name' => 'Food Visible']);
+        $hidden = User::create($base + ['organization_name' => 'Food Hidden']);
+        Organization::create(['user_id' => $hidden->id, 'status' => 'inactive', 'verification_status' => 'approved']);
+        $pending = User::create($base + ['organization_name' => 'Food Pending']);
+        Organization::create(['user_id' => $pending->id, 'status' => 'active', 'verification_status' => 'pending']);
+        foreach (['published', 'active', 'scheduled', 'draft', 'inactive', 'expired', 'archived'] as $status) {
+            Offer::create(['name' => 'Food '.$status, 'organization_id' => $visible->id, 'status' => $status, 'branch_assignment_status' => 'approved']);
+            Event::create(['name' => 'Food '.$status, 'organization_id' => $visible->id, 'status' => $status]);
+        }
+        $results = collect(app(UniversalSearch::class)->search('food', PHP_INT_MAX));
+        $this->assertSame([$visible->id], $results->where('type', 'organization')->pluck('id')->all());
+        foreach (['offer', 'event'] as $type) {
+            $this->assertEqualsCanonicalizing(['Food active', 'Food published'], $results->where('type', $type)->pluck('title')->all());
+        }
+    }
+
+    public function test_category_pagination_returns_new_results_and_full_totals(): void
+    {
+        DB::connection()->getPdo()->sqliteCreateFunction('timestamp', fn ($date, $time) => "$date $time", 2);
+        for ($i = 1; $i <= 23; $i++) {
+            User::create(['role' => 'organization', 'status' => 'active', 'is_verified' => true, 'organization_name' => 'Food '.$i, 'branch_mode' => 'independent']);
+        }
+        $first = $this->getJson('/api/public/search?q=food&limit=10&page=1')->assertOk()->assertJsonPath('totals.organization', 23)->json('results');
+        $second = $this->getJson('/api/public/search?q=food&limit=10&page=2&type=organization')->assertOk()->assertJsonPath('totals.organization', 23)->json('results');
+        $third = $this->getJson('/api/public/search?q=food&limit=10&page=3&type=organization')->assertOk()->json('results');
+        $this->assertCount(10, $first);
+        $this->assertCount(10, $second);
+        $this->assertCount(3, $third);
+        $this->assertCount(23, array_unique(array_column(array_merge($first, $second, $third), 'id')));
+        $this->getJson('/api/public/search?q=food&limit=10&page=2&type=offer')->assertOk()->assertJsonCount(0, 'results');
+    }
+
     public function test_homepage_endpoint_returns_relationship_matches_and_validates_limits(): void
     {
         DB::connection()->getPdo()->sqliteCreateFunction('timestamp', fn ($date, $time) => "$date $time", 2);
