@@ -54,8 +54,8 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'username' => ['required', 'string', 'min:3', 'max:50', 'unique:users,username'],
-            'email' => ['required', 'email', 'unique:users,email'],
-            'password' => ['required', Password::min(6)],
+            'email' => ['required_if:role,organization', 'nullable', 'email', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8'],
             'role' => ['nullable', 'in:user,organization,admin'],
             'referral_code' => ['nullable', 'string', 'max:32'],
             'organization_name' => ['nullable', 'string', 'max:255'],
@@ -132,7 +132,7 @@ class AuthController extends Controller
         $user = DB::transaction(function () use ($data, $role, $referrer) {
             $user = User::create([
                 'username' => $data['username'],
-                'email' => $data['email'],
+                'email' => $data['email'] ?? null,
                 'password' => Hash::make($data['password']),
                 'role' => $role,
                 'organization_name' => $data['organization_name'] ?? null,
