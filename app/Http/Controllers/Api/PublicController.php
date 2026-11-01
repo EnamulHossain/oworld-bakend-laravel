@@ -1555,8 +1555,32 @@ class PublicController extends Controller
     {
         $this->expireAttributesIfNeeded();
         $storeFilters = collect($organization->store_filters ?? []);
+        $assignedCategories = collect($organization->categories ?? []);
+        $categoryIds = Category::query()->whereNull('parent_id')
+            ->where(function ($query) use ($assignedCategories) {
+                $query->whereIn('id', $assignedCategories->map(fn ($category) => is_array($category) ? ($category['id'] ?? null) : $category)->filter()->all())
+                    ->orWhereIn('name', $assignedCategories->map(fn ($category) => is_array($category) ? ($category['name'] ?? null) : $category)->filter()->all());
+            })->pluck('id');
+        $subcategoryIds = $organization->subcategory_ids ?: array_filter([$organization->subcategory_id]);
         $publishedFilterIds = Attribute::query()
+            ->forType('store')
             ->whereIn('id', $storeFilters->pluck('attribute_id'))
+            ->where(function ($query) use ($categoryIds) {
+                if ($categoryIds->isEmpty()) {
+                    $query->whereRaw('1 = 0');
+                    return;
+                }
+                foreach ($categoryIds as $id) {
+                    $query->orWhere(fn ($categoryQuery) => $categoryQuery->matchingCategory((int) $id));
+                }
+            })
+            ->when($subcategoryIds, function ($query) use ($subcategoryIds) {
+                $query->where(function ($query) use ($subcategoryIds) {
+                    foreach ($subcategoryIds as $id) {
+                        $query->orWhere(fn ($subcategoryQuery) => $subcategoryQuery->matchingSubcategory((int) $id));
+                    }
+                });
+            })
             ->where('status', 'published')
             ->where(function ($query) {
                 $query->whereNull('start_date')

@@ -2,7 +2,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Api\{AdminController, PublicController, OrganizationController};
-use App\Models\{Category, Attribute, AttributeValue};
+use App\Models\{Category, Attribute, AttributeValue, User, Offer, Event};
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Schema};
@@ -16,7 +16,7 @@ class AttributeCategoriesTest extends TestCase
         parent::setUp();
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge('sqlite');
-        foreach ([new Category, new Attribute, new AttributeValue] as $model) {
+        foreach ([new Category, new Attribute, new AttributeValue, new User, new Offer, new Event] as $model) {
             Schema::create($model->getTable(), function (Blueprint $table) use ($model) {
                 $table->id();
                 foreach ($model->getFillable() as $field) $table->text($field)->nullable();
