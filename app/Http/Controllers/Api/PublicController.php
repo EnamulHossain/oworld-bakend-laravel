@@ -27,6 +27,22 @@ use Illuminate\Support\Facades\DB;
 
 class PublicController extends Controller
 {
+    private function detailBranchLocations($organizationId, ?array $locationIds = null): array
+    {
+        $store = $organizationId ? User::find($organizationId) : null;
+        if (!$store || $store->branch_mode !== 'unified') return [];
+
+        $locations = $store->locations()
+            ->when($locationIds, fn ($query) => $query->whereIn('id', $locationIds))
+            ->orderBy('id')
+            ->get(['id', 'name', 'address', 'area_id', 'phone', 'google_map_url', 'status']);
+        $areaNames = Area::whereIn('id', $locations->pluck('area_id')->filter())->pluck('name', 'id');
+
+        return $locations->map(fn ($location) => array_merge($location->toArray(), [
+            'area_name' => $areaNames[$location->area_id] ?? null,
+        ]))->all();
+    }
+
     public function facilities()
     {
         return response()->json([
@@ -574,6 +590,7 @@ class PublicController extends Controller
                 'end_time' => $event->end_time,
                 'location' => $event->location,
                 'address' => $event->address,
+                'branch_locations' => $this->detailBranchLocations($event->organization_id),
                 'phone_number' => $event->phone_number,
                 'facebook_url' => $event->facebook_url,
                 'instagram_url' => $event->instagram_url,
@@ -1195,6 +1212,7 @@ class PublicController extends Controller
                 'id' => $offer->id,
                 'location_ids' => $offer->location_ids,
                 'available_at' => $offer->available_at,
+                'branch_locations' => $this->detailBranchLocations($offer->organization_id, $offer->location_ids),
                 'status' => $offer->status,
                 'name' => $offer->name,
                 'details' => $offer->details,
