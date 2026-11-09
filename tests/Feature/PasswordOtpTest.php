@@ -45,6 +45,17 @@ class PasswordOtpTest extends TestCase
         });
     }
 
+    public function test_preview_skips_provider_and_allows_verification(): void
+    {
+        config(['services.otp.test_mode' => true]);
+        $phone = '01712345678';
+        $otp = $this->postJson('/api/auth/password-otp/send', ['phone' => $phone, 'sms_enabled' => false])
+            ->assertOk()->json('test_otp');
+        Http::assertNothingSent();
+        $this->postJson('/api/auth/password-otp/verify', ['phone' => $phone, 'otp' => $otp])
+            ->assertOk()->assertJsonStructure(['reset_token']);
+    }
+
     public function test_recovery_requires_otp_and_token_is_single_use(): void
     {
         $phone = '01712345678';

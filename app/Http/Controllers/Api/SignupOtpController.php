@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\GenNetSmsService;
+use App\Support\OtpDelivery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -15,6 +16,7 @@ class SignupOtpController extends Controller
     {
         $data = $request->validate(['phone' => ['required', 'string', 'regex:/^(?:\+?88)?01[3-9]\d{8}$/']]);
         $phone = $this->normalizePhone($data['phone']);
+        $preview = OtpDelivery::preview($request);
         $otpKey = 'signup_otp:'.hash('sha256', $phone);
         $cooldownKey = $otpKey.':cooldown';
 
@@ -25,11 +27,13 @@ class SignupOtpController extends Controller
         $otp = (string) random_int(100000, 999999);
         $reference = 'OTP'.now()->format('ymdHis').Str::upper(Str::random(4));
 
+        if (!$preview) {
         try {
             $sms->send($phone, "Your O’World verification code is {$otp}. Valid for 5 minutes. Do not share this code with anyone.\n\nHappy exploring!\nO’World", $reference);
         } catch (\Throwable $exception) {
             // Provider errors may contain credentials or the OTP; keep them private.
             return response()->json(['message' => 'Could not send the verification code. Please try again later.'], 503);
+        }
         }
 
         Cache::put($otpKey, ['hash' => hash('sha256', $otp), 'attempts' => 0], now()->addMinutes(5));
@@ -37,7 +41,8 @@ class SignupOtpController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Verification code sent.',
+            'message' => $preview ? 'Test mode: no SMS sent.' : 'Verification code sent.',
+            ...($preview ? ['test_otp' => $otp] : []),
         ]);
     }
 

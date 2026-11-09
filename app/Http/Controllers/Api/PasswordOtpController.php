@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\GenNetSmsService;
+use App\Support\OtpDelivery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -36,22 +37,26 @@ class PasswordOtpController extends Controller
     {
         $phone = $this->phone($request);
         $user = $this->account($phone);
+        $preview = OtpDelivery::preview($request);
         $key = 'password_otp:'.hash('sha256', $phone);
-        return Cache::lock($key.':lock', 30)->block(3, function () use ($key, $phone, $user, $sms) {
+        return Cache::lock($key.':lock', 30)->block(3, function () use ($key, $phone, $user, $sms, $preview) {
             if (Cache::has($key.':cooldown')) {
                 throw ValidationException::withMessages(['phone' => 'Please wait 60 seconds before requesting another code.']);
             }
             $otp = (string) random_int(100000, 999999);
+            if (!$preview) {
             try {
                 $sms->send($phone, "Your O’World verification code is {$otp}. Valid for 5 minutes. Do not share this code with anyone.\n\nHappy exploring!\nO’World", Str::upper(Str::random(20)));
             } catch (\Throwable $exception) {
                 // Provider exceptions can contain credentials or the OTP; never expose them.
                 return response()->json(['message' => 'Could not send the verification code. Please try again later.'], 503);
             }
+            }
             Cache::put($key, ['hash' => Hash::make($otp), 'user_id' => $user->id, 'password_hash' => $user->password,
                 'attempts' => 0, 'expires_at' => now()->addMinutes(5)->timestamp], 300);
             Cache::put($key.':cooldown', true, 60);
-            return response()->json(['message' => 'Verification code sent.', 'retry_after' => 60]);
+            return response()->json(['message' => $preview ? 'Test mode: no SMS sent.' : 'Verification code sent.', 'retry_after' => 60,
+                ...($preview ? ['test_otp' => $otp] : [])]);
         });
     }
 
