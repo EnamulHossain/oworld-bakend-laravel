@@ -26,6 +26,26 @@ class StoreProfileSyncTest extends TestCase
         }
     }
 
+    public function test_admin_can_toggle_store_publication_status_without_changing_profile(): void
+    {
+        (require database_path('migrations/2025_11_27_055404_create_permission_tables.php'))->up();
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        \Spatie\Permission\Models\Role::create(['name' => 'admin', 'guard_name' => 'sanctum']);
+        $admin = User::create(['role' => 'admin']);
+        $admin->assignRole('admin');
+        $store = User::create(['role' => 'organization', 'status' => 'active', 'organization_name' => 'Test Store']);
+
+        foreach (['inactive' => 'inactive', 'published' => 'active'] as $status => $storedStatus) {
+            $this->actingAs($admin, 'sanctum')->putJson("/api/admin/organizations/{$store->id}/status", ['status' => $status])
+                ->assertOk()->assertJsonPath('status', $status);
+            $this->assertSame($storedStatus, $store->fresh()->status);
+            $this->assertSame('Test Store', $store->fresh()->organization_name);
+        }
+
+        $this->putJson("/api/admin/organizations/{$store->id}/status", ['status' => 'draft'])->assertUnprocessable();
+        $this->actingAs($store, 'sanctum')->putJson("/api/admin/organizations/{$store->id}/status", ['status' => 'inactive'])->assertForbidden();
+    }
+
     public function test_admin_and_owner_share_profile_updates_without_changing_verification(): void
     {
         $store = User::create(['role' => 'organization', 'organization_name' => 'Test', 'is_verified' => true]);

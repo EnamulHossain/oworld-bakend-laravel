@@ -226,6 +226,7 @@ class AdminController extends Controller
                 'email',
                 'contact_email',
                 'organization_name',
+                'status',
                 'business_type',
                 'is_verified',
                 'categories',
@@ -407,6 +408,21 @@ class AdminController extends Controller
             'success' => true,
             'organization' => $this->formatOrganization($user->fresh()),
         ]);
+    }
+
+    public function updateOrganizationStatus(Request $request, User $user)
+    {
+        if ($user->role !== 'organization') {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['published', 'inactive'])],
+        ]);
+        // Published stores use the existing active account status.
+        $user->update(['status' => $data['status'] === 'published' ? 'active' : 'inactive']);
+
+        return response()->json(['success' => true, 'status' => $data['status']]);
     }
 
     public function updateOrganization(Request $request, User $user)
@@ -4225,6 +4241,7 @@ class AdminController extends Controller
             'contact_email' => $user->contact_email,
             'organization_name' => $user->organization_name,
             'organizationName' => $user->organization_name,
+            'status' => $user->status === 'inactive' ? 'inactive' : 'published',
             'business_type' => $user->business_type,
             'public_subcategory' => $user->public_subcategory,
             'public_tag' => $user->public_tag,

@@ -103,6 +103,7 @@ Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->g
     Route::post('organizations/upload-image', [AdminController::class, 'uploadOrganizationImage']);
     Route::get('organizations/{user}', [AdminController::class, 'showOrganization']);
     Route::put('organizations/{user}', [AdminController::class, 'updateOrganization']);
+    Route::put('organizations/{user}/status', [AdminController::class, 'updateOrganizationStatus']);
     Route::get('organizations/{user}/posts', [AdminController::class, 'listOrganizationPosts']);
     Route::post('organizations/{user}/posts', [AdminController::class, 'storeOrganizationPost']);
     Route::put('organizations/{user}/posts/{post}', [AdminController::class, 'updateOrganizationPost']);
