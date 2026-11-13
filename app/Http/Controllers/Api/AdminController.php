@@ -3469,6 +3469,7 @@ class AdminController extends Controller
         $data = $this->normalizeAttributeCategories($data, $attribute);
 
         return DB::transaction(function () use ($data, $attribute) {
+            $previousValueIds = $attribute->values()->pluck('id')->all();
             if (array_key_exists('name', $data)) {
                 $attribute->name = $data['name'];
             }
@@ -3541,7 +3542,7 @@ class AdminController extends Controller
                 }
             }
 
-            app(StoreEventFilterSync::class)->sync($attribute);
+            app(StoreEventFilterSync::class)->sync($attribute, previousValueIds: $previousValueIds);
 
             $attribute->load([
                 'values' => fn ($q) => $q->orderBy('id'),

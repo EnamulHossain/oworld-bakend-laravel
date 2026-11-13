@@ -48,16 +48,16 @@ class StoreEventFilterSyncTest extends TestCase
         $this->assertSame([$existing, $target], $store->fresh()->store_filters);
         $this->assertSame([$emptyTarget], $emptyStore->fresh()->store_filters);
 
-        // Removing Store must remove assignments even while Event remains.
+        // Event filters remain available in store profiles for event creation.
         $attribute->update(['types' => ['event']]);
         DB::transaction(fn () => $service->sync($attribute));
-        $this->assertSame([$existing], $store->fresh()->store_filters);
-        $this->assertSame([], $emptyStore->fresh()->store_filters ?? []);
+        $this->assertSame([$existing, $target], $store->fresh()->store_filters);
+        $this->assertSame([$emptyTarget], $emptyStore->fresh()->store_filters);
 
         // Adding Store automatically selects every value.
         $attribute->update(['types' => ['store', 'offer']]);
         DB::transaction(fn () => $service->sync($attribute));
-        $this->assertSame([$existing, $emptyTarget], $store->fresh()->store_filters);
+        $this->assertSame([$existing, $target], $store->fresh()->store_filters);
         $this->assertSame([$emptyTarget], $emptyStore->fresh()->store_filters);
         $this->assertSame([$existing], $customer->fresh()->store_filters);
 

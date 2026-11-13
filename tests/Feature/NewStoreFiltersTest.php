@@ -29,7 +29,7 @@ class NewStoreFiltersTest extends TestCase
         $no = $matching->values()->create(['value' => 'Dinner']);
         $global = Attribute::create(['name' => 'Global', 'type' => 'store']);
         $globalValue = $global->values()->create(['value' => 'Available']);
-        foreach ([['types' => ['event']], ['types' => ['store'], 'category_ids' => [99]],
+        foreach ([['types' => ['store'], 'category_ids' => [99]],
             ['types' => ['store'], 'subcategory_ids' => [21]]] as $data) {
             Attribute::create(['name' => 'Unrelated', ...$data])->values()->create(['value' => 'Other']);
         }
@@ -51,5 +51,25 @@ class NewStoreFiltersTest extends TestCase
         $legacy->update(['store_filters' => [['attribute_id' => $matching->id, 'value_ids' => [$yes->id]]]]);
         $legacy->update(['organization_name' => 'Updated']);
         $this->assertSame([['attribute_id' => $matching->id, 'value_ids' => [$yes->id]]], $legacy->fresh()->store_filters);
+
+        // Event/Offer filters shown in the store editor receive the same defaults.
+        $shared = Attribute::create(['name' => 'Event and offer', 'types' => ['event', 'offer'],
+            'category_ids' => [$category->id], 'subcategory_ids' => [20]]);
+        $sharedValue = $shared->values()->create(['value' => 'Yes']);
+        $eventOnly = Attribute::create(['name' => 'Event only', 'type' => 'event', 'category_id' => $category->id, 'subcategory_id' => 20]);
+        $eventValue = $eventOnly->values()->create(['value' => 'Event value']);
+        $newStore = User::create(['role' => 'organization', 'categories' => ['Food'], 'subcategory_ids' => [20]]);
+        $this->assertSame([...$expected,
+            ['attribute_id' => $shared->id, 'value_ids' => [$sharedValue->id]],
+            ['attribute_id' => $eventOnly->id, 'value_ids' => [$eventValue->id]],
+        ], $newStore->fresh()->store_filters);
+
+        // Repair existing stores, including filters previously assigned empty.
+        $legacy->update(['store_filters' => [...$legacy->store_filters, ['attribute_id' => $shared->id, 'value_ids' => []]]]);
+        $this->artisan('filters:sync-stores')->assertSuccessful();
+        $selections = collect($legacy->fresh()->store_filters)->keyBy('attribute_id');
+        $this->assertSame([$sharedValue->id], $selections[$shared->id]['value_ids']);
+        $this->assertSame([$eventValue->id], $selections[$eventOnly->id]['value_ids']);
+        $this->assertSame([$yes->id], $selections[$matching->id]['value_ids']);
     }
 }

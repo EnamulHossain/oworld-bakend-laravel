@@ -11,6 +11,47 @@ use Tests\TestCase;
 
 class AttributeCategoriesTest extends TestCase
 {
+    public function test_filter_edits_sync_new_and_replaced_values_and_changed_categories_to_stores(): void
+    {
+        $a = Category::create(['name' => 'Food']);
+        $b = Category::create(['name' => 'Wellness']);
+        $sa = Category::create(['name' => 'Cafe', 'parent_id' => $a->id]);
+        $sb = Category::create(['name' => 'Spa', 'parent_id' => $b->id]);
+        $store = User::create(['role' => 'organization', 'categories' => ['Food'], 'subcategory_ids' => [$sa->id]]);
+        $other = User::create(['role' => 'organization', 'categories' => ['Wellness'], 'subcategory_ids' => [$sb->id]]);
+        $controller = app(AdminController::class);
+        $controller->storeAttribute(Request::create('/', 'POST', [
+            'name' => 'Facilities', 'types' => ['event', 'offer'], 'start_date' => '2020-01-01',
+            'category_ids' => [$a->id], 'subcategory_ids' => [$sa->id],
+            'values' => [['value' => 'Parking'], ['value' => 'WiFi']],
+        ]));
+        $attribute = Attribute::firstOrFail();
+        $parking = $attribute->values()->where('value', 'Parking')->firstOrFail();
+        $wifi = $attribute->values()->where('value', 'WiFi')->firstOrFail();
+        // The store deliberately deselects WiFi before the admin edits the definition.
+        $store->update(['store_filters' => [['attribute_id' => $attribute->id, 'value_ids' => [$parking->id]]]]);
+        $payload = ['name' => 'Updated facilities', 'start_date' => '2020-01-01',
+            'values' => [['value' => 'Covered parking'], ['value' => 'WiFi'], ['value' => 'Delivery']]];
+        $controller->updateAttribute(Request::create('/', 'PUT', $payload), $attribute);
+        $newIds = $attribute->values()->where('value', '!=', 'WiFi')->orderBy('id')->pluck('id')->all();
+        $expected = [['attribute_id' => $attribute->id, 'value_ids' => $newIds]];
+        $this->assertSame($expected, $store->fresh()->store_filters);
+        $this->assertNotContains($wifi->id, $newIds);
+        $this->assertSoftDeleted('attribute_values', ['id' => $parking->id]);
+        $this->assertSame([], $other->fresh()->store_filters ?? []);
+        $this->assertSame('Updated facilities', $attribute->fresh()->name);
+
+        // Saving the same definition again must preserve the choices and avoid duplicates.
+        $controller->updateAttribute(Request::create('/', 'PUT', $payload), $attribute);
+        $this->assertSame($expected, $store->fresh()->store_filters);
+
+        $controller->updateAttribute(Request::create('/', 'PUT', ['start_date' => '2020-01-01',
+            'category_ids' => [$b->id], 'subcategory_ids' => [$sb->id]]), $attribute);
+        $this->assertSame([], $store->fresh()->store_filters);
+        $this->assertSame([['attribute_id' => $attribute->id,
+            'value_ids' => $attribute->values()->orderBy('id')->pluck('id')->all()]], $other->fresh()->store_filters);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
