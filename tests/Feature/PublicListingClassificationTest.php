@@ -34,11 +34,17 @@ class PublicListingClassificationTest extends TestCase
                 'name' => 'Classified listing', 'status' => 'published',
                 'category_id' => $category->id, 'category_ids' => [$category->id, 100],
                 'subcategory_id' => $child->id, 'subcategory_ids' => [$child->id, 200],
+                'is_recurring' => true, 'recurring_start_date' => '2030-01-01',
+                'recurring_end_date' => '2030-01-31', 'recurring_days' => ['monday', 'friday'],
             ]);
             $model::create(['name' => 'Unclassified listing', 'status' => 'published']);
             $response = app(PublicController::class)->$method(Request::create('/'));
             $items = collect($response->getData(true)[$method]);
             $item = $items->firstWhere('id', $record->id);
+            $this->assertTrue($item['is_recurring']);
+            $this->assertSame(['monday', 'friday'], $item['recurring_days']);
+            $this->assertStringStartsWith('2030-01-01', $item['recurring_start_date']);
+            $this->assertStringStartsWith('2030-01-31', $item['recurring_end_date']);
             $this->assertEquals($category->id, $item['category_id']);
             $this->assertSame([$category->id, 100], $item['category_ids']);
             $this->assertEquals($child->id, $item['subcategory_id']);

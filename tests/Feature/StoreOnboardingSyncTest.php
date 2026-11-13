@@ -9,6 +9,38 @@ use Tests\TestCase;
 
 class StoreOnboardingSyncTest extends TestCase
 {
+    public function test_admin_created_store_is_managed_and_signup_can_be_unmanaged(): void
+    {
+        $permissions = require database_path('migrations/2025_11_27_055404_create_permission_tables.php');
+        $permissions->up();
+        $ordinary = User::create(['role' => 'organization', 'organization_name' => 'Self signup', 'ismanagedbyoworld' => false]);
+        $this->assertFalse($ordinary->fresh()->ismanagedbyoworld);
+
+        $request = \Illuminate\Http\Request::create('/api/admin/organizations', 'POST', [
+            'organization_name' => 'Admin created store', 'password' => 'test-password-123',
+            'ismanagedbyoworld' => false,
+        ]);
+        $response = app(\App\Http\Controllers\Api\AdminController::class)->storeOrganization($request);
+        $this->assertSame(201, $response->getStatusCode());
+        $managed = User::findOrFail($response->getData(true)['organization']['id']);
+        $this->assertTrue($managed->ismanagedbyoworld);
+        $managed->update(['organization_name' => 'Renamed store']);
+        $this->assertTrue($managed->fresh()->ismanagedbyoworld);
+        $this->assertFalse($ordinary->fresh()->ismanagedbyoworld);
+    }
+
+    public function test_database_default_remains_true_and_migration_preserves_existing_flags(): void
+    {
+        $managed = User::create(['role' => 'organization', 'ismanagedbyoworld' => true]);
+        $signup = User::create(['role' => 'organization', 'ismanagedbyoworld' => false]);
+        $migration = require database_path('migrations/2026_11_13_000003_restore_store_management_default.php');
+        $migration->up();
+        $id = DB::table('users')->insertGetId(['role' => 'organization']);
+        $this->assertTrue(User::findOrFail($id)->ismanagedbyoworld);
+        $this->assertTrue($managed->fresh()->ismanagedbyoworld);
+        $this->assertFalse($signup->fresh()->ismanagedbyoworld);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

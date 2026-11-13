@@ -12,6 +12,7 @@ return [
         'http://localhost:9001',
         'http://127.0.0.1:9001',
         'https://oworldbd.com',
+        'https://www.oworldbd.com',
         'https://oworld.ibrahimaaraf.com',
         'https://owbacktest.ibrahimaaraf.com',
         'https://oworldbackend.ibrahimaaraf.com',

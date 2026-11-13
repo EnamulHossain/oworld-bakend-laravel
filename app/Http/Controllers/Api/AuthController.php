@@ -131,6 +131,7 @@ class AuthController extends Controller
 
         $user = DB::transaction(function () use ($data, $role, $referrer) {
             $user = User::create([
+                'ismanagedbyoworld' => false,
                 'username' => $data['username'],
                 'email' => $data['email'] ?? null,
                 'password' => Hash::make($data['password']),
@@ -519,6 +520,7 @@ class AuthController extends Controller
 
         $user = DB::transaction(function () use ($username, $googleUser, $validatedRole, $referrer, $referralCode, $signupAttribution, $firstName, $lastName) {
             $user = User::create([
+                'ismanagedbyoworld' => false,
                 'username' => $username,
                 'email' => $googleUser->getEmail(),
                 'password' => Hash::make(Str::random(16)),

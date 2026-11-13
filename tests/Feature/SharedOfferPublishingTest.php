@@ -13,6 +13,53 @@ use Tests\TestCase;
 
 class SharedOfferPublishingTest extends TestCase
 {
+    public function test_event_recurring_schedule_saves_updates_and_clears(): void
+    {
+        $store = $this->store();
+        $writer = app(OrganizationController::class);
+        $payload = ['name' => 'Weekly class', 'starting_date' => now()->toDateString(),
+            'end_date' => now()->addMonth()->toDateString(), 'status' => 'draft',
+            'is_recurring' => true, 'recurring_start_date' => now()->toDateString(),
+            'recurring_end_date' => now()->addMonth()->toDateString(),
+            'recurring_days' => ['monday', 'friday'], 'banner' => ['/class.jpg']];
+        $response = $writer->storeEvent($this->request($store, $payload));
+        $this->assertSame(201, $response->getStatusCode());
+        $event = Event::firstOrFail();
+        $this->assertTrue($event->is_recurring);
+        $this->assertSame(['monday', 'friday'], $event->recurring_days);
+        $writer->updateEvent($this->request($store, ['recurring_days' => ['saturday']]), $event);
+        $this->assertSame(['saturday'], $event->fresh()->recurring_days);
+        $writer->updateEvent($this->request($store, ['is_recurring' => false]), $event->fresh());
+        $this->assertFalse($event->fresh()->is_recurring);
+        $this->assertSame([], $event->fresh()->recurring_days);
+        $this->assertNull($event->fresh()->recurring_start_date);
+        $this->assertNull($event->fresh()->recurring_end_date);
+    }
+
+    public function test_event_rejects_incomplete_or_out_of_bounds_recurring_schedules(): void
+    {
+        $store = $this->store();
+        $base = ['name' => 'Class', 'starting_date' => now()->toDateString(),
+            'end_date' => now()->addMonth()->toDateString(), 'is_recurring' => true,
+            'recurring_start_date' => now()->toDateString(),
+            'recurring_end_date' => now()->addMonth()->toDateString(), 'recurring_days' => ['monday']];
+        foreach ([['recurring_days' => []], ['recurring_days' => ['invalid']],
+            ['recurring_start_date' => now()->subDay()->toDateString()],
+            ['recurring_end_date' => now()->addMonths(2)->toDateString()],
+            ['recurring_end_date' => now()->subDay()->toDateString()]] as $invalid) {
+            try {
+                app(OrganizationController::class)->storeEvent($this->request($store, [...$base, ...$invalid]));
+                $this->fail('Invalid recurrence was accepted.');
+            } catch (ValidationException $exception) {
+                $field = array_key_first($invalid);
+                $this->assertTrue(collect(array_keys($exception->errors()))->contains(
+                    fn ($key) => $key === $field || str_starts_with($key, $field . '.')
+                ));
+            }
+        }
+        $this->assertSame(0, Event::count());
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

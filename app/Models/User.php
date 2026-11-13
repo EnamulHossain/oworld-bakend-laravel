@@ -17,6 +17,10 @@ class User extends BaseAuthenticatable
 
     protected static function booted(): void
     {
+        static::creating(function (User $user) {
+            app(\App\Services\StoreEventFilterSync::class)->initializeStore($user);
+        });
+
         static::updating(function (User $user) {
             if ($user->isDirty('phone')) {
                 $user->isphoneverified = false;

@@ -352,6 +352,7 @@ class AdminController extends Controller
 
         $this->prepareBranchLink($data);
         $organization = User::create([
+            'ismanagedbyoworld' => true,
             'branch_mode' => empty($data['parent_org_id']) ? 'unified' : 'independent',
             'username' => $username,
             'email' => $email,
@@ -1456,6 +1457,11 @@ class AdminController extends Controller
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in($this->offerEventStatuses())],
             'starting_date' => ['required', 'date', 'after_or_equal:' . now()->subYear()->toDateString()],
+            'is_recurring' => ['nullable', 'boolean'],
+            'recurring_start_date' => ['nullable', 'date'],
+            'recurring_end_date' => ['nullable', 'date'],
+            'recurring_days' => ['nullable', 'array'],
+            'recurring_days.*' => ['string', Rule::in($this->allowedRecurringDays())],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['required', 'date', 'after_or_equal:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
@@ -1485,6 +1491,8 @@ class AdminController extends Controller
         $data = $this->normalizeEventClassification($request, $data);
         $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
+        $data = $this->normalizeOfferRecurringFields($data);
+        $this->validateOfferRecurringFields($data, null, 'starting_date');
         $data = $this->normalizeExpirationFields($data);
 
         $gallerySortOrder = $this->normalizeJsonField($data['gallery_sort_order'] ?? []);
@@ -1532,6 +1540,11 @@ class AdminController extends Controller
             'attributes.*.value_ids.*' => ['integer', 'exists:attribute_values,id'],
             'status' => ['nullable', Rule::in($this->offerEventStatuses())],
             'starting_date' => ['nullable', 'date'],
+            'is_recurring' => ['nullable', 'boolean'],
+            'recurring_start_date' => ['nullable', 'date'],
+            'recurring_end_date' => ['nullable', 'date'],
+            'recurring_days' => ['nullable', 'array'],
+            'recurring_days.*' => ['string', Rule::in($this->allowedRecurringDays())],
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_date' => ['nullable', 'date', 'after_or_equal:starting_date'],
             'end_time' => ['nullable', 'date_format:H:i'],
@@ -1561,6 +1574,8 @@ class AdminController extends Controller
         $data = $this->normalizeEventClassification($request, $data, $event);
         $data = $this->normalizeAreaSelection($data, 'events');
         $data = $this->normalizeDateAndTimeFields($data, 'starting_date');
+        $data = $this->normalizeOfferRecurringFields($data);
+        $this->validateOfferRecurringFields($data, $event, 'starting_date');
         $data = $this->normalizeExpirationFields($data, $event);
 
         if (array_key_exists('banner', $data)) {
@@ -3843,7 +3858,7 @@ class AdminController extends Controller
         return $data;
     }
 
-    private function validateOfferRecurringFields(array &$data, ?Offer $offer = null): void
+    private function validateOfferRecurringFields(array &$data, Offer|Event|null $offer = null, string $startField = 'start_date'): void
     {
         $isRecurring = array_key_exists('is_recurring', $data)
             ? (bool) $data['is_recurring']
@@ -3857,7 +3872,7 @@ class AdminController extends Controller
             return;
         }
 
-        $startDate = $data['start_date'] ?? $offer?->start_date?->format('Y-m-d');
+        $startDate = $data[$startField] ?? $offer?->{$startField}?->format('Y-m-d');
         $endDate = $data['end_date'] ?? $offer?->end_date?->format('Y-m-d');
         $recurringStart = $data['recurring_start_date'] ?? $offer?->recurring_start_date?->format('Y-m-d');
         $recurringEnd = $data['recurring_end_date'] ?? $offer?->recurring_end_date?->format('Y-m-d');
@@ -3878,7 +3893,7 @@ class AdminController extends Controller
         }
 
         if (!$startDate || !$endDate) {
-            $messages['start_date'] = 'Offer start date and end date are required for recurring offers.';
+            $messages[$startField] = 'Start date and end date are required for recurring dates.';
         }
 
         if ($messages !== []) {
@@ -3895,11 +3910,11 @@ class AdminController extends Controller
         }
 
         if ($recurringStartDate->lt($offerStart)) {
-            $messages['recurring_start_date'] = 'Recurring start date must be within the offer start and end dates.';
+            $messages['recurring_start_date'] = 'Recurring start date must be within the main start and end dates.';
         }
 
         if ($recurringEndDate->gt($offerEnd)) {
-            $messages['recurring_end_date'] = 'Recurring end date must be within the offer start and end dates.';
+            $messages['recurring_end_date'] = 'Recurring end date must be within the main start and end dates.';
         }
 
         $invalidRecurringDays = array_diff($recurringDays, $this->allowedRecurringDays());

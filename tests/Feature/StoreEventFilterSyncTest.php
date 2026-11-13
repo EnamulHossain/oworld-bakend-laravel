@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Attribute, AttributeValue, User, Offer, Event};
+use App\Models\{Attribute, AttributeValue, Category, User, Offer, Event};
 use App\Services\StoreEventFilterSync;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB, Schema};
@@ -10,11 +10,11 @@ use Tests\TestCase;
 
 class StoreEventFilterSyncTest extends TestCase
 {
-    public function test_sync_preserves_store_choices_without_assigning_all_values(): void
+    public function test_sync_automatically_selects_values_and_preserves_existing_store_choices(): void
     {
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge('sqlite');
-        foreach ([new User, new Attribute, new AttributeValue, new Offer, new Event] as $model) {
+        foreach ([new User, new Attribute, new AttributeValue, new Category, new Offer, new Event] as $model) {
             Schema::create($model->getTable(), function (Blueprint $table) use ($model) {
                 $table->id();
                 foreach ($model->getFillable() as $field) {
@@ -35,12 +35,12 @@ class StoreEventFilterSyncTest extends TestCase
         $target = ['attribute_id' => $attribute->id, 'value_ids' => [$value->id, $removedValue->id]];
         $store->update(['store_filters' => [$existing, $target]]);
         $removedValue->delete();
-        $attribute->values()->create(['value' => 'Dinner']);
+        $dinner = $attribute->values()->create(['value' => 'Dinner']);
         $service = app(StoreEventFilterSync::class);
         DB::transaction(fn () => $service->sync($attribute));
         $target = ['attribute_id' => $attribute->id, 'value_ids' => [$value->id]];
         $this->assertSame([$existing, $target], $store->fresh()->store_filters);
-        $emptyTarget = ['attribute_id' => $attribute->id, 'value_ids' => []];
+        $emptyTarget = ['attribute_id' => $attribute->id, 'value_ids' => [$value->id, $dinner->id]];
         $this->assertSame([$emptyTarget], $emptyStore->fresh()->store_filters);
         $this->assertSame([$existing], $customer->fresh()->store_filters);
 
@@ -54,7 +54,7 @@ class StoreEventFilterSyncTest extends TestCase
         $this->assertSame([$existing], $store->fresh()->store_filters);
         $this->assertSame([], $emptyStore->fresh()->store_filters ?? []);
 
-        // Adding Store assigns the filter without selecting its values.
+        // Adding Store automatically selects every value.
         $attribute->update(['types' => ['store', 'offer']]);
         DB::transaction(fn () => $service->sync($attribute));
         $this->assertSame([$existing, $emptyTarget], $store->fresh()->store_filters);
@@ -93,5 +93,24 @@ class StoreEventFilterSyncTest extends TestCase
         DB::transaction(fn () => $service->sync($attribute, true));
         $this->assertSame([$existing], $store->fresh()->store_filters);
         $this->assertSame([], $emptyStore->fresh()->store_filters);
+
+        // Only stores matching both restrictions receive the filter and values.
+        $category = Category::create(['name' => 'Food']);
+        $attribute->update(['category_ids' => [$category->id], 'subcategory_ids' => [20]]);
+        $store->update(['categories' => ['Food'], 'subcategory_ids' => [20]]);
+        $emptyStore->update(['categories' => [(string) $category->id], 'subcategory_id' => 20]);
+        $otherCategory = User::create(['role' => 'organization', 'categories' => ['Other'], 'subcategory_ids' => [20]]);
+        $otherSubcategory = User::create(['role' => 'organization', 'categories' => ['Food'], 'subcategory_ids' => [21]]);
+        DB::transaction(fn () => $service->sync($attribute));
+        $this->assertSame([$existing, $emptyTarget], $store->fresh()->store_filters);
+        $this->assertSame([$emptyTarget], $emptyStore->fresh()->store_filters);
+        $this->assertSame([], $otherCategory->fresh()->store_filters ?? []);
+        $this->assertSame([], $otherSubcategory->fresh()->store_filters ?? []);
+
+        $attribute->update(['subcategory_ids' => [21]]);
+        DB::transaction(fn () => $service->sync($attribute));
+        $this->assertSame([$existing], $store->fresh()->store_filters);
+        $this->assertSame([], $emptyStore->fresh()->store_filters);
+        $this->assertSame([$emptyTarget], $otherSubcategory->fresh()->store_filters);
     }
 }
