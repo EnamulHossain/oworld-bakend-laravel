@@ -258,7 +258,7 @@ class PublicController extends Controller
             return response()->json(['error' => 'Category not found.'], 404);
         }
 
-        $events = Event::query()
+        $events = Event::query()->fromPublishedStore()
             ->with('organization:id,organization_name')
             ->where('status', 'published')
             ->where('category_id', $category->id)
@@ -287,7 +287,7 @@ class PublicController extends Controller
                 'sort_order',
             ]);
 
-        $offers = Offer::query()
+        $offers = Offer::query()->fromPublishedStore()
             ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with('organization:id,organization_name')
             ->where('status', 'published')
@@ -399,7 +399,7 @@ class PublicController extends Controller
         $offset = max((int)$request->query('offset', 0), 0);
         $categoryId = $request->query('category_id');
 
-        $query = Event::query()
+        $query = Event::query()->fromPublishedStore()
             ->with([
                 'organization:id,organization_name',
                 'category:id,name',
@@ -513,7 +513,7 @@ class PublicController extends Controller
 
         $limit = min((int)$request->query('limit', 12), 50);
 
-        $events = Event::query()
+        $events = Event::query()->fromPublishedStore()
             ->with('organization:id,organization_name')
             ->where('status', 'published')
             ->orderBy('sort_order')
@@ -580,7 +580,7 @@ class PublicController extends Controller
         $this->syncOfferAndEventLifecycle(Event::class, [(int) $id]);
 
         $user = Auth::guard('sanctum')->user();
-        $event = Event::query()
+        $event = Event::query()->fromPublishedStore()
             ->with(['organization:id,organization_name', 'category:id,name'])
             ->whereIn('status', ['published', 'active', 'expired', 'archived'])
             ->find($id);
@@ -639,7 +639,7 @@ class PublicController extends Controller
         $categoryId = $request->query('category_id');
         $offerType = strtolower((string)$request->query('offer_type', ''));
 
-        $query = Offer::query()
+        $query = Offer::query()->fromPublishedStore()
             ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with([
                 'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours',
@@ -795,12 +795,12 @@ class PublicController extends Controller
             ->unique()
             ->values();
         $offersById = $offerIds->isNotEmpty()
-            ? Offer::whereIn('id', $offerIds)->get([
+            ? Offer::fromPublishedStore()->whereIn('id', $offerIds)->get([
                 'id', 'status', 'start_date', 'start_time', 'end_date', 'end_time', 'expiration_date', 'expiration_time',
             ])->keyBy('id')
             : collect();
         $eventsById = $eventIds->isNotEmpty()
-            ? Event::whereIn('id', $eventIds)->get([
+            ? Event::fromPublishedStore()->whereIn('id', $eventIds)->get([
                 'id', 'status', 'starting_date', 'start_time', 'end_date', 'end_time', 'expiration_date', 'expiration_time',
             ])->keyBy('id')
             : collect();
@@ -897,7 +897,7 @@ class PublicController extends Controller
 
         $limit = min((int)$request->query('limit', 12), 50);
 
-        $offers = Offer::query()
+        $offers = Offer::query()->fromPublishedStore()
             ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with('organization:id,organization_name')
             ->where('status', 'published')
@@ -1208,7 +1208,7 @@ class PublicController extends Controller
         $this->syncOfferAndEventLifecycle(Offer::class, [(int) $id]);
 
         $user = Auth::guard('sanctum')->user();
-        $offer = Offer::query()
+        $offer = Offer::query()->fromPublishedStore()
             ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with([
                 'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours,facebook_url,instagram_url,website_url,google_map_url',
@@ -1361,7 +1361,7 @@ class PublicController extends Controller
         if ($attributeFilters->isNotEmpty()) {
             $matchingOrganizationIds = (clone $query)
                 ->with(['organizationOffers' => function ($offers) use ($categoryId) {
-                    $offers->whereIn('status', ['published', 'active'])
+                    $offers->fromPublishedStore()->whereIn('status', ['published', 'active'])
                         ->when($categoryId > 0, fn ($offerQuery) => $offerQuery->where('category_id', $categoryId))
                         ->select(['id', 'organization_id', 'attributes']);
                 }])
@@ -1387,7 +1387,7 @@ class PublicController extends Controller
 
         if ($request->boolean('availability')) {
             $availableStores = (clone $query)->with(['organizationOffers' => function ($offers) use ($categoryId) {
-                $offers->whereIn('status', ['published', 'active'])
+                $offers->fromPublishedStore()->whereIn('status', ['published', 'active'])
                     ->when($categoryId > 0, fn ($offerQuery) => $offerQuery->where('category_id', $categoryId))
                     ->select(['id', 'organization_id', 'attributes']);
             }])->get(['id', 'categories', 'subcategory_id', 'subcategory_ids', 'area_id']);
@@ -1408,12 +1408,12 @@ class PublicController extends Controller
 
         $total = (clone $query)->count();
         $records = $query->skip($offset)->limit($limit)
-            ->withCount(['organizationEvents as public_events_count' => fn ($events) => $events->whereIn('status', ['published', 'active'])])
+            ->withCount(['organizationEvents as public_events_count' => fn ($events) => $events->fromPublishedStore()->whereIn('status', ['published', 'active'])])
             ->get();
         $storeIds = $records->pluck('id')->all();
         $offerStoreIds = [];
         if ($storeIds !== []) {
-            $offers = Offer::query()
+            $offers = Offer::query()->fromPublishedStore()
                 ->where('branch_assignment_status', 'approved')
                 ->whereIn('status', ['published', 'active'])
                 ->where(function ($offers) use ($storeIds) {
@@ -1463,7 +1463,7 @@ class PublicController extends Controller
             return response()->json(['error' => 'Organization not found.'], 404);
         }
 
-        $offers = Offer::query()
+        $offers = Offer::query()->fromPublishedStore()
             ->with(['category:id,name'])
             ->where('branch_assignment_status', 'approved')
             ->where(function ($query) use ($record) {
@@ -1477,7 +1477,7 @@ class PublicController extends Controller
             ->get()
             ->map(fn ($offer) => $this->formatOrganizationOffer($offer));
 
-        $events = Event::query()
+        $events = Event::query()->fromPublishedStore()
             ->where('organization_id', $record->id)
             ->whereIn('status', ['published', 'active'])
             ->orderByDesc('starting_date')
@@ -1510,12 +1510,12 @@ class PublicController extends Controller
             ->where('organization_id', $record->id)
             ->where(function ($query) {
                 $query->where('type', '!=', 'event')->orWhereNull('source_id')
-                    ->orWhereIn('source_id', Event::query()->whereIn('status', ['published', 'active'])->select('id'));
+                    ->orWhereIn('source_id', Event::query()->fromPublishedStore()->whereIn('status', ['published', 'active'])->select('id'));
             })
             ->where(function ($query) {
                 $query->where('type', '!=', 'offer')
                     ->orWhereNull('source_id')
-                    ->orWhereIn('source_id', Offer::query()->where('branch_assignment_status', 'approved')->whereIn('status', ['published', 'active'])->select('id'));
+                    ->orWhereIn('source_id', Offer::query()->fromPublishedStore()->where('branch_assignment_status', 'approved')->whereIn('status', ['published', 'active'])->select('id'));
             })
             ->withCount(['likes', 'comments'])
             ->orderByDesc('is_pinned')

@@ -55,11 +55,26 @@ class BranchSystemTest extends TestCase
     {
         $store = $this->store();
         $response = app(BranchLocationController::class)->update($this->request($store, [
-            'branch_mode' => 'unified', 'locations' => [['name' => 'Gulshan', 'phone' => '123', 'status' => 'coming_soon']],
+            'branch_mode' => 'unified', 'locations' => [['name' => 'Gulshan', 'phone' => '+8801712345678', 'status' => 'coming_soon']],
         ]), $store);
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame(1, User::count());
         $this->assertSame('Gulshan', $store->locations()->first()->name);
+    }
+
+    public function test_invalid_location_numbers_show_field_validation_errors(): void
+    {
+        $store = $this->store();
+        try {
+            app(BranchLocationController::class)->update($this->request($store, [
+                'branch_mode' => 'unified', 'locations' => [['name' => 'Banani', 'phone' => 'Bnn', 'whatsapp' => 'Bhh', 'status' => 'open']],
+            ]), $store);
+            $this->fail('Invalid numbers were accepted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('locations.0.phone', $exception->errors());
+            $this->assertArrayHasKey('locations.0.whatsapp', $exception->errors());
+            $this->assertSame(0, StoreLocation::count());
+        }
     }
 
     public function test_super_admin_can_save_store_locations(): void

@@ -104,6 +104,13 @@ class Event extends BaseModel
         return array_map(fn ($item) => $item['url'], $ranked);
     }
 
+    public function scopeFromPublishedStore($query)
+    {
+        // The admin's Published store status is stored as active on the user.
+        return $query->whereHas('organization', fn ($store) => $store
+            ->where('role', 'organization')->where('status', 'active'));
+    }
+
     public function category()
     {
         return $this->belongsTo(Category::class);

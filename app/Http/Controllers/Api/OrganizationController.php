@@ -174,7 +174,7 @@ class OrganizationController extends Controller
     public function deletePost(Request $request, StorePost $post)
     {
         abort_unless((int) $post->organization_id === (int) $request->user()->id, 404);
-        $post->delete();
+        app(\App\Services\StoreContentDeletion::class)->deletePost($post);
         return response()->json(['success' => true]);
     }
 
@@ -746,11 +746,11 @@ class OrganizationController extends Controller
 
     public function deleteEvent(Request $request, Event $event)
     {
-        if ($event->organization_id !== $request->user()->id) {
+        if ((int) $event->organization_id !== (int) $request->user()->id) {
             return response()->json(['error' => 'You are not allowed to manage this event.'], 403);
         }
 
-        $event->delete();
+        app(\App\Services\StoreContentDeletion::class)->deleteContent($event);
         return response()->json(['success' => true]);
     }
 
@@ -1040,11 +1040,11 @@ class OrganizationController extends Controller
 
     public function deleteOffer(Request $request, Offer $offer)
     {
-        if ($offer->organization_id !== $request->user()->id) {
+        if ((int) $offer->organization_id !== (int) $request->user()->id) {
             return response()->json(['error' => 'You are not allowed to manage this offer.'], 403);
         }
 
-        $offer->delete();
+        app(\App\Services\StoreContentDeletion::class)->deleteContent($offer);
         return response()->json(['success' => true]);
     }
 

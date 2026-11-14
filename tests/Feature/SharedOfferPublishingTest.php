@@ -239,4 +239,31 @@ class SharedOfferPublishingTest extends TestCase
         app(OrganizationController::class)->updateEvent($this->request($other, ['name' => 'Changed']), $event);
     }
 
+    public function test_admin_deletion_removes_content_and_linked_store_posts(): void
+    {
+        $store = $this->store();
+        $admin = app(\App\Http\Controllers\Api\AdminController::class);
+        foreach ([Offer::class => 'offer', Event::class => 'event'] as $model => $type) {
+            $content = $model::create(['organization_id' => $store->id, 'name' => 'Delete me']);
+            $post = StorePost::create(['organization_id' => $store->id, 'type' => $type, 'source_id' => $content->id]);
+            $unrelated = StorePost::create(['organization_id' => $store->id, 'type' => 'general', 'title' => 'Keep me']);
+            $admin->{$type === 'offer' ? 'deleteOffer' : 'deleteEvent'}($content);
+            $this->assertNull($model::find($content->id));
+            $this->assertNull(StorePost::find($post->id));
+            $this->assertNotNull(StorePost::find($unrelated->id));
+        }
+    }
+
+    public function test_owner_deleting_linked_post_also_removes_source_content(): void
+    {
+        $store = $this->store();
+        foreach ([Offer::class => 'offer', Event::class => 'event'] as $model => $type) {
+            $content = $model::create(['organization_id' => $store->id, 'name' => 'Delete me']);
+            $post = StorePost::create(['organization_id' => $store->id, 'type' => $type, 'source_id' => $content->id]);
+            app(OrganizationController::class)->deletePost($this->request($store, []), $post);
+            $this->assertNull($model::find($content->id));
+            $this->assertNull(StorePost::find($post->id));
+        }
+    }
+
 }

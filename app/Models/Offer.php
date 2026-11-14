@@ -135,6 +135,13 @@ class Offer extends BaseModel
         ])->all();
     }
 
+    public function scopeFromPublishedStore($query)
+    {
+        // The admin's Published store status is stored as active on the user.
+        return $query->whereHas('organization', fn ($store) => $store
+            ->where('role', 'organization')->where('status', 'active'));
+    }
+
     public function category()
     {
         return $this->belongsTo(Category::class);

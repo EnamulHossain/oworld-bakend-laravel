@@ -573,7 +573,7 @@ class AdminController extends Controller
     {
         $this->ensureOrganization($user);
         abort_unless((int) $post->organization_id === (int) $user->id, 404);
-        $post->delete();
+        app(\App\Services\StoreContentDeletion::class)->deletePost($post);
         return response()->json(['success' => true]);
     }
 
@@ -1644,7 +1644,7 @@ class AdminController extends Controller
 
     public function deleteEvent(Event $event)
     {
-        $event->update(['status' => 'canceled']);
+        app(\App\Services\StoreContentDeletion::class)->deleteContent($event);
         return response()->json(['success' => true]);
     }
 
@@ -1995,7 +1995,7 @@ class AdminController extends Controller
 
     public function deleteOffer(Offer $offer)
     {
-        $offer->update(['status' => 'canceled']);
+        app(\App\Services\StoreContentDeletion::class)->deleteContent($offer);
         return response()->json(['success' => true]);
     }
 
@@ -3048,7 +3048,7 @@ class AdminController extends Controller
         $field = $request->hasFile('image') ? 'image' : 'file';
 
         $request->validate([
-            $field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+            $field => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif,mp4,webm,mov,m4v', 'max:' . (in_array(strtolower($request->file($field)?->getClientOriginalExtension() ?? ''), ['mp4', 'webm', 'mov', 'm4v'], true) ? 20480 : 5120)],
         ]);
 
         $path = $request->file($field)->store('uploads/system', 'public');
