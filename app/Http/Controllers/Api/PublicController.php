@@ -27,15 +27,25 @@ use Illuminate\Support\Facades\DB;
 
 class PublicController extends Controller
 {
-    private function detailBranchLocations($organizationId, ?array $locationIds = null): array
+    private function detailBranchLocations($organizationId, ?array $locationIds = null, ?array $branchIds = null): array
     {
         $store = $organizationId ? User::find($organizationId) : null;
-        if (!$store || $store->branch_mode !== 'unified') return [];
+        if (!$store) return [];
+        if ($store->branch_mode !== 'unified') {
+            return User::where('role', 'organization')->where('status', 'active')
+                ->whereIn('id', $branchIds ?: [$store->id])->with('area:id,name')->get()
+                ->map(fn ($branch) => [
+                    'id' => $branch->id, 'name' => $branch->area?->name ?: ($branch->organization_name ?: $branch->username),
+                    'address' => $branch->address, 'area_name' => $branch->area?->name,
+                    'phone' => $branch->phone, 'google_map_url' => $branch->google_map_url,
+                    'opening_hours' => $branch->opening_hours,
+                ])->all();
+        }
 
         $locations = $store->locations()
             ->when($locationIds, fn ($query) => $query->whereIn('id', $locationIds))
             ->orderBy('id')
-            ->get(['id', 'name', 'address', 'area_id', 'phone', 'google_map_url', 'status']);
+            ->get(['id', 'name', 'address', 'area_id', 'phone', 'google_map_url', 'opening_hours', 'status']);
         $areaNames = Area::whereIn('id', $locations->pluck('area_id')->filter())->pluck('name', 'id');
 
         return $locations->map(fn ($location) => array_merge($location->toArray(), [
@@ -218,7 +228,7 @@ class PublicController extends Controller
         $categories = Category::query()
             ->with(['children' => fn ($query) => $query
                 ->where('status', 'active')
-                ->select(['id', 'parent_id', 'name', 'short_name', 'image', 'icon', 'order'])])
+                ->select(['id', 'parent_id', 'name', 'short_name', 'image', 'icon', 'order', 'is_event_category', 'category_types'])])
             ->where('status', 'active')
             ->whereNull('parent_id')
             ->when(in_array($request->query('type'), ['offer', 'event', 'store'], true), fn ($query) => $query->whereJsonContains('category_types', $request->query('type')))
@@ -1231,7 +1241,7 @@ class PublicController extends Controller
                 'id' => $offer->id,
                 'location_ids' => $offer->location_ids,
                 'available_at' => $offer->available_at,
-                'branch_locations' => $this->detailBranchLocations($offer->organization_id, $offer->location_ids),
+                'branch_locations' => $this->detailBranchLocations($offer->organization_id, $offer->location_ids, $offer->branch_ids),
                 'status' => $offer->status,
                 'name' => $offer->name,
                 'details' => $offer->details,

@@ -203,4 +203,17 @@ class BranchSystemTest extends TestCase
         $this->expectException(HttpException::class);
         $controller->session($this->request($this->store()), $id);
     }
+    public function test_offer_branch_details_respect_selected_locations_and_include_hours(): void
+    {
+        $store = $this->store();
+        $chosen = StoreLocation::create(['organization_id' => $store->id, 'name' => 'Banani', 'phone' => '+8801712345678', 'address' => 'Road 11', 'opening_hours' => '10 AM - 9 PM', 'status' => 'open']);
+        StoreLocation::create(['organization_id' => $store->id, 'name' => 'Gulshan', 'status' => 'open']);
+        $method = new \ReflectionMethod(\App\Http\Controllers\Api\PublicController::class, 'detailBranchLocations');
+        $locations = $method->invoke(app(\App\Http\Controllers\Api\PublicController::class), $store->id, [$chosen->id]);
+        $this->assertCount(1, $locations);
+        $this->assertSame('Banani', $locations[0]['name']);
+        $this->assertSame('+8801712345678', $locations[0]['phone']);
+        $this->assertSame('10 AM - 9 PM', $locations[0]['opening_hours']);
+    }
+
 }

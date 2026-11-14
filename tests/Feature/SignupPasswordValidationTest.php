@@ -45,6 +45,17 @@ class SignupPasswordValidationTest extends TestCase
         }
     }
 
+    public function test_minimum_signup_age_is_ten(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-15 12:00:00', 'Asia/Dhaka'));
+        $data = $this->signupData('abcdefgh');
+        $this->postJson('/api/auth/register', [...$data, 'dob' => '2016-11-16'])
+            ->assertUnprocessable()->assertJsonValidationErrors('dob');
+        $this->postJson('/api/auth/register', [...$data, 'dob' => '2016-11-15'])
+            ->assertUnprocessable()->assertJsonMissingValidationErrors('dob')
+            ->assertJsonPath('message', 'Phone verification is required before registration.');
+    }
+
     public function test_short_passwords_are_rejected(): void
     {
         foreach (['abcdefg', '1234567', ''] as $password) {

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Spatie\Permission\Models\Role;
@@ -61,13 +62,15 @@ class AuthController extends Controller
             'organization_name' => ['nullable', 'string', 'max:255'],
             'categories' => ['nullable', 'array', 'max:20'],
             'categories.*' => ['integer', 'distinct', 'exists:categories,id'],
+            'subcategory_ids' => ['nullable', 'array', 'max:100'],
+            'subcategory_ids.*' => ['integer', 'distinct', Rule::exists('categories', 'id')->where(fn ($query) => $query->whereIn('parent_id', (array) $request->input('categories', []))->orWhere('is_event_category', true)->orWhereJsonContains('category_types', 'event'))],
             'business_type' => ['nullable', 'string', 'max:100'],
             'phone' => ['required', 'string', 'max:16'],
             'terms_accepted' => ['nullable', 'boolean'],
             'full_name' => ['nullable', 'string', 'max:120'],
             'first_name' => ['nullable', 'string', 'max:60'],
             'last_name' => ['nullable', 'string', 'max:60'],
-            'dob' => ['nullable', 'date'],
+            'dob' => ['nullable', 'date', 'before_or_equal:' . now('Asia/Dhaka')->subYearsNoOverflow(10)->toDateString()],
             'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'about' => ['nullable', 'string', 'max:1000'],
             'signup_source' => ['nullable', 'string', 'max:50'],
@@ -75,6 +78,7 @@ class AuthController extends Controller
             'signup_utm_campaign' => ['nullable', 'string', 'max:150'],
             'otp_verification_token' => ['required', 'string', 'size:64'],
         ], [
+            'dob.before_or_equal' => 'You must be at least 10 years old to sign up.',
             'phone.regex' => 'Enter a valid 11-digit Bangladeshi mobile number starting with 013-019.',
         ]);
 
@@ -129,6 +133,16 @@ class AuthController extends Controller
             $data['categories'] = array_map('intval', $data['categories']);
         }
 
+        if ($role === 'organization') {
+            $eventCategories = Category::where('status', 'active')
+                ->where(fn ($query) => $query->where('is_event_category', true)->orWhereJsonContains('category_types', 'event'))->get();
+            $eventParentIds = $eventCategories->whereNull('parent_id')->pluck('id');
+            $eventSubcategories = Category::where('status', 'active')->whereNotNull('parent_id')
+                ->where(fn ($query) => $query->whereIn('parent_id', $eventParentIds)->orWhereIn('id', $eventCategories->pluck('id')))->get();
+            $data['categories'] = array_values(array_unique(array_merge($data['categories'] ?? [], $eventParentIds->all(), $eventSubcategories->pluck('parent_id')->all())));
+            $data['subcategory_ids'] = array_values(array_unique(array_merge($data['subcategory_ids'] ?? [], $eventSubcategories->pluck('id')->all())));
+        }
+
         $user = DB::transaction(function () use ($data, $role, $referrer) {
             $user = User::create([
                 'ismanagedbyoworld' => false,
@@ -138,6 +152,7 @@ class AuthController extends Controller
                 'role' => $role,
                 'organization_name' => $data['organization_name'] ?? null,
                 'categories' => $data['categories'] ?? null,
+                'subcategory_ids' => $data['subcategory_ids'] ?? [],
                 'business_type' => $data['business_type'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'full_name' => $data['full_name'] ?? null,

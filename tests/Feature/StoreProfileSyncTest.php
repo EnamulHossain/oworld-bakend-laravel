@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{User, Category, Offer};
+use App\Models\{User, Category, Offer, Attribute, AttributeValue};
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB, Schema};
 use Tests\TestCase;
@@ -14,7 +14,7 @@ class StoreProfileSyncTest extends TestCase
         parent::setUp();
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge('sqlite');
-        foreach ([new User, new Category, new Offer] as $model) {
+        foreach ([new User, new Category, new Offer, new Attribute, new AttributeValue] as $model) {
             Schema::create($model->getTable(), function (Blueprint $table) use ($model) {
                 $table->id();
                 foreach ($model->getFillable() as $field) {
@@ -121,4 +121,22 @@ class StoreProfileSyncTest extends TestCase
         $admin = User::create(['role' => 'superadmin']);
         $this->actingAs($admin, 'sanctum')->putJson("/api/store-profiles/{$admin->id}", ['about' => 'Invalid'])->assertNotFound();
     }
+    public function test_onboarding_hours_save_for_scheduled_closed_and_always_open_days(): void
+    {
+        (require database_path('migrations/2025_11_27_055404_create_permission_tables.php'))->up();
+        $store = User::create(['role' => 'organization', 'organization_name' => 'Hours test']);
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        \Spatie\Permission\Models\Role::create(['name' => 'organization', 'guard_name' => 'sanctum']);
+        $store->assignRole('organization');
+        $hours = [
+            ['day' => 'Monday', 'open' => '09:30', 'close' => '22:15', 'closed' => false, 'always_open' => false],
+            ['day' => 'Tuesday', 'open' => '10:00', 'close' => '19:00', 'closed' => true, 'always_open' => false],
+            ['day' => 'Wednesday', 'open' => '10:00', 'close' => '19:00', 'closed' => false, 'always_open' => true],
+        ];
+        $this->actingAs($store, 'sanctum')->putJson('/api/organization/profile', [
+            'address' => '', 'area_id' => null, 'google_map_url' => '', 'business_hours' => $hours,
+        ])->assertOk();
+        $this->assertSame($hours, $store->fresh()->business_hours);
+    }
+
 }
