@@ -228,6 +228,7 @@ class AdminController extends Controller
                 'email',
                 'contact_email',
                 'organization_name',
+                'isOnline',
                 'status',
                 'business_type',
                 'is_verified',
@@ -255,6 +256,12 @@ class AdminController extends Controller
                 'catalog_items',
                 'created_at',
         ];
+
+        // Selectors need identity and classification, not full catalogs/media.
+        // Loading every catalog at once can exhaust PHP memory before responding.
+        if ($request->boolean('for_selector')) {
+            $columns = array_values(array_diff($columns, ['catalog_items', 'catalog_sections', 'store_filters']));
+        }
 
         if (!$request->hasAny(['page', 'limit'])) {
             $organizations = $query->get($columns);
@@ -290,6 +297,7 @@ class AdminController extends Controller
 
         $data = $request->validate([
             'organization_name' => ['required', 'string', 'max:255'],
+            'isOnline' => ['sometimes', 'boolean'],
             'username' => ['nullable', 'string', 'max:50', 'unique:users,username'],
             'email' => ['nullable', 'email', 'unique:users,email'],
             'password' => ['required', 'string', 'min:6'],
@@ -362,6 +370,7 @@ class AdminController extends Controller
             'role' => 'organization',
             'parent_org_id' => $data['parent_org_id'] ?? null,
             'organization_name' => $organizationName,
+            'isOnline' => $data['isOnline'] ?? false,
             'business_type' => $data['business_type'] ?? null,
             'public_subcategory' => $data['public_subcategory'] ?? null,
             'public_tag' => $data['public_tag'] ?? null,
@@ -436,6 +445,7 @@ class AdminController extends Controller
 
         $data = $request->validate([
             'organization_name' => ['sometimes', 'string', 'max:255'],
+            'isOnline' => ['sometimes', 'boolean'],
             'username' => ['sometimes', 'string', 'max:50', Rule::unique('users', 'username')->ignore($user->id)],
             'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:6'],
@@ -4260,6 +4270,7 @@ class AdminController extends Controller
             'email' => $user->email,
             'contact_email' => $user->contact_email,
             'organization_name' => $user->organization_name,
+            'isOnline' => (bool) $user->isOnline,
             'organizationName' => $user->organization_name,
             'status' => $user->status === 'inactive' ? 'inactive' : 'published',
             'business_type' => $user->business_type,
