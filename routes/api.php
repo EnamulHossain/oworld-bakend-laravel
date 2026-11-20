@@ -52,7 +52,7 @@ Route::post('public/analytics/events', [PublicController::class, 'trackAnalytics
 Route::post('highlights/{highlight}/share', [PublicController::class, 'shareHighlight']);
 Route::get('public/store-posts/{post}/comments', [StorePostInteractionController::class, 'comments']);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceStaffPermissions::class])->group(function () {
     Route::post('branch-access/branches', [\App\Http\Controllers\Api\BranchManagerController::class, 'createBranch']);
     Route::get('branch-access', [\App\Http\Controllers\Api\BranchManagerController::class, 'index']);
     Route::post('branch-access', [\App\Http\Controllers\Api\BranchManagerController::class, 'invite']);
@@ -85,12 +85,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('stores/{organization}/follow', [StoreFollowController::class, 'toggle']);
 });
 
-Route::middleware(['auth:sanctum', 'role:admin|superAdmin'])->prefix('admin')->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin|superAdmin', \App\Http\Middleware\EnforceStaffPermissions::class])->prefix('admin')->group(function () {
     Route::get('store-onboardings', [AdminStoreOnboardingController::class, 'index']);
     Route::get('store-onboardings/{organization}', [AdminStoreOnboardingController::class, 'show']);
     Route::get('store-onboarding-documents/{document}', [AdminStoreOnboardingController::class, 'document']);
     Route::patch('store-onboardings/{organization}/approve', [AdminStoreOnboardingController::class, 'approve']);
     Route::patch('store-onboardings/{organization}/reject', [AdminStoreOnboardingController::class, 'reject']);
+    Route::get('staff-access', function (\Illuminate\Http\Request $request) {
+        $custom = $request->user()->roles->filter(fn ($role) => !in_array($role->name, \App\Http\Controllers\Api\RoleManagementController::BUILTIN, true));
+        return response()->json(['restricted' => $request->user()->role === 'admin' && $custom->isNotEmpty(),
+            'permissions' => $custom->flatMap(fn ($role) => $role->permissions->pluck('name'))->unique()->values()]);
+    });
+    Route::middleware('role:superAdmin')->group(function () {
+        Route::get('roles', [\App\Http\Controllers\Api\RoleManagementController::class, 'index']);
+        Route::post('roles', [\App\Http\Controllers\Api\RoleManagementController::class, 'store']);
+        Route::put('roles/{role}', [\App\Http\Controllers\Api\RoleManagementController::class, 'update']);
+        Route::delete('roles/{role}', [\App\Http\Controllers\Api\RoleManagementController::class, 'destroy']);
+        Route::put('role-assignments/{user}', [\App\Http\Controllers\Api\RoleManagementController::class, 'assign']);
+    });
     Route::get('users', [AdminController::class, 'users']);
     Route::patch('users/{user}/role', [AdminController::class, 'updateUserRole']);
     Route::get('admins', [AdminController::class, 'admins']);
