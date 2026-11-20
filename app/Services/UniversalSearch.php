@@ -29,7 +29,25 @@ class UniversalSearch
         )), fn ($id) => $id !== '')));
     }
 
-    public function search(string $query, int $limit = 5): array
+    private function matchesBudget(array $selections, $attributes, string $type, ?float $minimum, ?float $maximum): bool
+    {
+        if ($minimum === null && $maximum === null) return true;
+        foreach ($selections as $selection) {
+            $attribute = $attributes->get($selection['attribute_id'] ?? null);
+            if (!$attribute || !preg_match('/^price(?: range)?$/i', trim($attribute->name))
+                || !in_array($type === 'organization' ? 'store' : $type, $attribute->types ?? [$attribute->type], true)) continue;
+            foreach ($attribute->values->whereIn('id', (array) ($selection['value_ids'] ?? [])) as $value) {
+                $text = trim(str_replace([',', '৳', 'BDT', 'Tk.', 'Tk'], '', $value->value));
+                if (!preg_match('/^(\d+(?:\.\d+)?)(?:\s*[-–—]\s*(\d+(?:\.\d+)?))?$/u', $text, $matches)) continue;
+                $low = (float) $matches[1];
+                $high = isset($matches[2]) ? (float) $matches[2] : $low;
+                if ($low <= $high && ($minimum === null || $low >= $minimum) && ($maximum === null || $high <= $maximum)) return true;
+            }
+        }
+        return false;
+    }
+
+    public function search(string $query, int $limit = 5, ?float $minimum = null, ?float $maximum = null): array
     {
         $terms = array_values(array_filter(self::words($query), fn ($word) => !in_array($word, ['in', 'at', 'near', 'the', 'a', 'an', 'and', 'of', 'for'], true)));
         if (!$terms) return [];
@@ -94,7 +112,8 @@ class UniversalSearch
         $results = [];
         $listingBusinesses = [];
 
-        $add = function ($record, string $type, array $categoryIds, array $areaIds, array $selections, string $title, string $body, string $related = '', ?int $brandId = null, bool $relatedBusiness = false) use (&$results, $terms, $structuredTerms, $areaConstraints, $categories, $attributes, $areas, $stores, $requestedTypes) {
+        $add = function ($record, string $type, array $categoryIds, array $areaIds, array $selections, string $title, string $body, string $related = '', ?int $brandId = null, bool $relatedBusiness = false) use (&$results, $terms, $structuredTerms, $areaConstraints, $categories, $attributes, $areas, $stores, $requestedTypes, $minimum, $maximum) {
+            if (!$this->matchesBudget($selections, $attributes, $type, $minimum, $maximum)) return;
             if (!$relatedBusiness && $requestedTypes && !isset($requestedTypes[$type])) return;
             if ($areaConstraints && !array_intersect(array_keys($areaConstraints), $areaIds)) return;
             $labels = [];

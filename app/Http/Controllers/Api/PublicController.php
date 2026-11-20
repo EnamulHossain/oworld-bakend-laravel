@@ -591,7 +591,7 @@ class PublicController extends Controller
 
         $user = Auth::guard('sanctum')->user();
         $event = Event::query()->fromPublishedStore()
-            ->with(['organization:id,organization_name', 'category:id,name'])
+            ->with(['organization:id,organization_name,isOnline', 'category:id,name'])
             ->whereIn('status', ['published', 'active', 'expired', 'archived'])
             ->find($id);
 
@@ -629,6 +629,7 @@ class PublicController extends Controller
                 'serial' => $event->sort_order ?? 0,
                 'organization' => $event->organization ? [
                     'organizationName' => $event->organization->organization_name,
+                    'isOnline' => (bool) $event->organization->isOnline,
                 ] : null,
                 'category' => $event->category ? [
                     'id' => $event->category->id,
@@ -1221,7 +1222,7 @@ class PublicController extends Controller
         $offer = Offer::query()->fromPublishedStore()
             ->where(fn ($q) => $q->where('branch_assignment_status', 'approved')->orWhereNull('branch_assignment_status'))
             ->with([
-                'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours,facebook_url,instagram_url,website_url,google_map_url',
+                'organization:id,organization_name,username,avatar,profile_banner,address,phone,opening_hours,facebook_url,instagram_url,website_url,google_map_url,isOnline',
                 'category:id,name',
                 'area:id,name',
             ])
@@ -1276,6 +1277,7 @@ class PublicController extends Controller
                     'username' => $offer->organization->username,
                     'avatar' => $offer->organization->avatar,
                     'profile_banner' => $offer->organization->profile_banner,
+                    'isOnline' => (bool) $offer->organization->isOnline,
                     'address' => $offer->organization->address,
                     'phone' => $offer->organization->phone,
                     'opening_hours' => $offer->organization->opening_hours,
@@ -1327,15 +1329,8 @@ class PublicController extends Controller
         $query = User::query()
             ->with('area:id,name')
             ->where('role', 'organization')
-            ->where(function ($builder) {
-                $builder->where(function ($userQuery) {
-                    $userQuery->where('status', 'active')
-                        ->where('is_verified', true);
-                })->orWhereHas('organization', function ($organizationQuery) {
-                    $organizationQuery->where('status', 'active')
-                        ->where('verification_status', 'approved');
-                });
-            })
+            // The admin's Published store status is stored as active on the user.
+            ->where('status', 'active')
             ->when($q !== '', function ($builder) use ($q) {
                 $builder->where(function ($inner) use ($q) {
                     $inner->where('organization_name', 'like', "%{$q}%")
@@ -1581,6 +1576,8 @@ class PublicController extends Controller
             'limit' => ['nullable', 'integer', 'min:1', 'max:15'],
             'page' => ['nullable', 'integer', 'min:1'],
             'type' => ['nullable', 'in:organization,offer,event'],
+            'min_price' => ['nullable', 'numeric', 'min:0'],
+            'max_price' => ['nullable', 'numeric', 'min:0', 'gte:min_price'],
         ]);
         $query = trim($data['q'] ?? '');
         if (mb_strlen($query) < 2) {
@@ -1590,9 +1587,9 @@ class PublicController extends Controller
         $service = app(\App\Services\UniversalSearch::class);
         $limit = (int) ($data['limit'] ?? 5);
         if (!isset($data['page'])) {
-            return response()->json(['success' => true, 'results' => $service->search($query, $limit)]);
+            return response()->json(['success' => true, 'results' => $service->search($query, $limit, $data['min_price'] ?? null, $data['max_price'] ?? null)]);
         }
-        $all = collect($service->search($query, PHP_INT_MAX));
+        $all = collect($service->search($query, PHP_INT_MAX, $data['min_price'] ?? null, $data['max_price'] ?? null));
         $offset = ((int) $data['page'] - 1) * $limit;
         $grouped = $all->groupBy('type');
         return response()->json([

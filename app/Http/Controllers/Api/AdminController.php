@@ -193,6 +193,7 @@ class AdminController extends Controller
     public function organizations(Request $request)
     {
         $query = User::query()
+            ->with('creator:id,full_name,username')
             ->where('role', 'organization')
             ->when($request->boolean('top_level'), function ($q) {
                 $q->whereNull('parent_org_id');
@@ -221,6 +222,7 @@ class AdminController extends Controller
 
         $columns = [
                 'id',
+                'created_by',
                 'parent_org_id',
                 'username',
                 'email',
@@ -3684,14 +3686,14 @@ class AdminController extends Controller
     private function generateUniqueUsername(string $base): string
     {
         $candidateBase = trim($base) !== '' ? trim($base) : 'organization';
-        $candidateBase = substr($candidateBase, 0, 50);
+        $candidateBase = mb_substr($candidateBase, 0, 50, 'UTF-8');
         $candidate = $candidateBase;
         $counter = 1;
 
         while (User::where('username', $candidate)->exists()) {
             $suffix = (string)$counter;
             $trimLength = max(0, 50 - strlen($suffix));
-            $candidate = substr($candidateBase, 0, $trimLength) . $suffix;
+            $candidate = mb_substr($candidateBase, 0, $trimLength, 'UTF-8') . $suffix;
             $counter++;
         }
 
@@ -4250,6 +4252,8 @@ class AdminController extends Controller
     {
         return [
             'id' => $user->id,
+            'created_by' => $user->created_by,
+            'created_by_name' => $user->creator?->full_name ?: $user->creator?->username,
             'parent_org_id' => $user->parent_org_id,
             'branch_mode' => $user->branch_mode,
             'username' => $user->username,

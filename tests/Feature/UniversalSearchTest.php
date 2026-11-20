@@ -10,6 +10,31 @@ use Tests\TestCase;
 
 class UniversalSearchTest extends TestCase
 {
+    public function test_strict_budget_uses_assigned_published_prices_before_limiting_results(): void
+    {
+        $price = Attribute::create(['name' => 'Price', 'types' => ['offer'], 'status' => 'published']);
+        $store = User::create(['role' => 'organization', 'status' => 'active', 'is_verified' => true, 'organization_name' => 'Lunch Store']);
+        $offers = [];
+        foreach (['৳ 3000–5000', '50', 'Unknown', '40–60', '50–50', '50 onwards'] as $label) {
+            $value = AttributeValue::create(['attribute_id' => $price->id, 'value' => $label]);
+            $offers[] = Offer::create(['name' => 'Buffet Lunch '.$label, 'organization_id' => $store->id,
+                'status' => 'published', 'branch_assignment_status' => 'approved',
+                'attributes' => [['attribute_id' => $price->id, 'value_ids' => [$value->id]]]]);
+        }
+        Offer::create(['name' => 'Lunch unknown price', 'organization_id' => $store->id, 'status' => 'published', 'branch_assignment_status' => 'approved']);
+        $service = app(UniversalSearch::class);
+        $this->assertEqualsCanonicalizing([$offers[1]->id, $offers[4]->id], array_column($service->search('lunch', PHP_INT_MAX, 50, 50), 'id'));
+        $this->assertCount(1, $service->search('lunch', 1, 50, 50));
+        $this->assertSame([$offers[0]->id], array_column($service->search('lunch', PHP_INT_MAX, 3000, 5000), 'id'));
+        DB::connection()->getPdo()->sqliteCreateFunction('timestamp', fn ($date, $time) => "$date $time", 2);
+        $this->getJson('/api/public/search?q=lunch&min_price=50&max_price=50&page=1&limit=1')
+            ->assertOk()->assertJsonPath('totals.offer', 2)->assertJsonCount(1, 'results');
+        $this->getJson('/api/public/search?q=lunch&min_price=100&max_price=50')->assertUnprocessable();
+        $this->getJson('/api/public/search?q=lunch&min_price=unknown')->assertUnprocessable();
+        $price->update(['status' => 'draft']);
+        $this->assertSame([], $service->search('lunch', PHP_INT_MAX, 50, 50));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

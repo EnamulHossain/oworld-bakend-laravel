@@ -18,6 +18,9 @@ class User extends BaseAuthenticatable
     protected static function booted(): void
     {
         static::creating(function (User $user) {
+            if ($user->role === 'organization' && !$user->created_by) {
+                $user->created_by = auth('sanctum')->id() ?? auth()->id();
+            }
             app(\App\Services\StoreEventFilterSync::class)->initializeStore($user);
         });
 
@@ -42,6 +45,7 @@ class User extends BaseAuthenticatable
         'branch_mode',
         'status',
         'organization_name',
+        'isOnline',
         'business_type',
         'public_subcategory',
         'public_tag',
@@ -119,6 +123,7 @@ class User extends BaseAuthenticatable
             'is_verified' => 'boolean',
             'isphoneverified' => 'boolean',
             'ismanagedbyoworld' => 'boolean',
+            'isOnline' => 'boolean',
             'business_hours' => 'array',
             'payment_methods' => 'array',
             'facilities' => 'array',
@@ -128,6 +133,11 @@ class User extends BaseAuthenticatable
             'interior_media' => 'array',
             'store_tags' => 'array',
         ];
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(self::class, 'created_by');
     }
 
     public function createdCategories()
