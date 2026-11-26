@@ -74,6 +74,9 @@ class SharedOfferPublishingTest extends TestCase
                     if (str_ends_with($field, '_id') || in_array($field, ['sort_order', 'pin_order'])) $table->integer($field)->nullable();
                     else $table->text($field)->nullable();
                 }
+                foreach (['created_by', 'updated_by'] as $field) {
+                    if (!in_array($field, $model->getFillable(), true)) $table->integer($field)->nullable();
+                }
                 $table->timestamps();
                 $table->softDeletes();
             });
@@ -181,6 +184,24 @@ class SharedOfferPublishingTest extends TestCase
         app(OrganizationController::class)->storeOffer($this->request($store, $payload));
         $this->assertSame($store->id, (int) Offer::firstOrFail()->organization_id);
         $this->assertSame($store->id, (int) StorePost::firstOrFail()->organization_id);
+    }
+
+    public function test_vendor_exclusive_checkbox_is_saved_and_can_be_updated(): void
+    {
+        $store = $this->store();
+        $payload = $this->payload($store);
+        unset($payload['offer_type']);
+        $payload['is_exclusive'] = true;
+        $controller = app(OrganizationController::class);
+        $response = $controller->storeOffer($this->request($store, $payload));
+        $this->assertSame(201, $response->getStatusCode());
+        $offer = Offer::firstOrFail();
+        $this->assertSame('exclusive', $offer->offer_type);
+        $this->assertSame('approved', $offer->branch_assignment_status);
+        $this->assertSame($store->id, (int) $offer->organization_id);
+        $this->assertSame($offer->id, (int) StorePost::firstOrFail()->source_id);
+        $controller->updateOffer($this->request($store, ['is_exclusive' => false]), $offer);
+        $this->assertSame('regular', $offer->fresh()->offer_type);
     }
 
     public function test_unrelated_branch_is_rejected_before_creating_an_offer(): void

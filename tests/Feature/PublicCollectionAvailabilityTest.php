@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Area, Category, Event, Offer, Organization, User};
+use App\Models\{Area, Attribute, AttributeValue, Category, Event, Offer, Organization, User};
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB, Schema};
 use Tests\TestCase;
@@ -15,11 +15,14 @@ class PublicCollectionAvailabilityTest extends TestCase
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge('sqlite');
         DB::connection()->getPdo()->sqliteCreateFunction('timestamp', fn ($date, $time) => "$date $time", 2);
-        foreach ([new Offer, new Event, new User, new Organization, new Category, new Area] as $model) {
+        foreach ([new Offer, new Event, new User, new Organization, new Category, new Area, new Attribute, new AttributeValue] as $model) {
             Schema::create($model->getTable(), function (Blueprint $table) use ($model) {
                 $table->id();
                 foreach ($model->getFillable() as $field) {
                     $table->text($field)->nullable();
+                }
+                foreach (['created_by', 'updated_by'] as $field) {
+                    if (!in_array($field, $model->getFillable(), true)) $table->integer($field)->nullable();
                 }
                 $table->timestamps();
                 $table->softDeletes();
@@ -66,6 +69,12 @@ class PublicCollectionAvailabilityTest extends TestCase
             'role' => 'organization', 'status' => 'inactive', 'is_verified' => true,
             'categories' => [99], 'subcategory_ids' => [99], 'area_id' => 99,
         ]);
+        foreach ([false, null] as $verified) {
+            User::create([
+                'role' => 'organization', 'status' => 'active', 'is_verified' => $verified,
+                'categories' => [98], 'subcategory_ids' => [98], 'area_id' => 98,
+            ]);
+        }
         Offer::create([
             'organization_id' => $store->id, 'category_id' => $category->id, 'status' => 'published',
             'attributes' => [['attribute_id' => 7, 'value_ids' => [8]]],

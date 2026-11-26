@@ -1331,6 +1331,8 @@ class PublicController extends Controller
             ->where('role', 'organization')
             // The admin's Published store status is stored as active on the user.
             ->where('status', 'active')
+            // Onboarding approval sets is_verified on the store owner account.
+            ->where('is_verified', true)
             ->when($q !== '', function ($builder) use ($q) {
                 $builder->where(function ($inner) use ($q) {
                     $inner->where('organization_name', 'like', "%{$q}%")

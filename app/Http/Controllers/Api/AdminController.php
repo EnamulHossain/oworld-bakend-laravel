@@ -297,6 +297,10 @@ class AdminController extends Controller
 
         $data = $request->validate([
             'organization_name' => ['required', 'string', 'max:255'],
+            'store_filters' => ['nullable', 'array'],
+            'store_filters.*.attribute_id' => ['required', 'integer', 'distinct', 'exists:attributes,id'],
+            'store_filters.*.value_ids' => ['required', 'array'],
+            'store_filters.*.value_ids.*' => ['integer', 'distinct', 'exists:attribute_values,id'],
             'isOnline' => ['sometimes', 'boolean'],
             'username' => ['nullable', 'string', 'max:50', 'unique:users,username'],
             'email' => ['nullable', 'email', 'unique:users,email'],
@@ -342,6 +346,15 @@ class AdminController extends Controller
 
         $organizationName = trim($data['organization_name']);
         $this->validateOrganizationSubcategory($data);
+        foreach ($data['store_filters'] ?? [] as $selection) {
+            $attribute = \App\Models\Attribute::findOrFail($selection['attribute_id']);
+            $valueIds = array_unique($selection['value_ids']);
+            if ($attribute->values()->whereIn('id', $valueIds)->count() !== count($valueIds)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'store_filters' => ['Select values belonging to the selected filter.'],
+                ]);
+            }
+        }
         if ($organizationName === '') {
             return response()->json(['error' => 'Organization name is required.'], 422);
         }
@@ -376,6 +389,7 @@ class AdminController extends Controller
             'public_tag' => $data['public_tag'] ?? null,
             'is_verified' => $data['is_verified'] ?? false,
             'categories' => $data['categories'] ?? [],
+            'store_filters' => $data['store_filters'] ?? [],
             'subcategory_ids' => $data['subcategory_ids'] ?? [],
             'subcategory_id' => $data['subcategory_ids'][0] ?? null,
             'phone' => $data['phone'] ?? null,
